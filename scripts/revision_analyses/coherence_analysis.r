@@ -5,7 +5,7 @@
 base_path <- '/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering'
 setwd(base_path)
 
-source("scripts/revision_analyses/make_dataset.r")
+source("scripts/utils/make_dataset.r")
 
 
 ##### Ward-like hierarchical clustering without spatial information

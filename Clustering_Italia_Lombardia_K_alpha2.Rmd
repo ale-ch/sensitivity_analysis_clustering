@@ -1,0 +1,2772 @@
+---
+title: "Clustering spaziale: selezione di K e alpha"
+subtitle: "12 variabili, comuni unici, criterio del paper, mappe e profili dei gruppi"
+date: "`r format(Sys.Date(), '%d/%m/%Y')`"
+output:
+  html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    code_folding: show
+    df_print: paged
+params:
+  base_path: '/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering'
+  area: "Lombardia"
+  includi_milano: false
+  scelta_K: "automatico"
+  K_min: 2
+  K_max: 15
+  K0_manuale: 8
+  K_finale_manuale: 8
+  scelta_alpha: "manuale"
+  criterio_alpha: "paper_assoluto"
+  alpha_step: 0.01
+  alpha_manuale: 0.1
+  palette_mappe: "sobria"
+  salva_distanze: true
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Come usare il documento
+
+Questo e un unico documento R Markdown: il codice di analisi e contenuto
+nei chunk R sottostanti. Aprirlo in **RStudio**, verificare `base_path`
+nel blocco YAML iniziale e scegliere **Knit with Parameters**. I file di
+dati restano quelli letti dallo script originale; non servono i
+precedenti CSV armonizzati.
+
+| Parametro | Significato |
+|:-----------------------------------|:-----------------------------------|
+| `area` | `Italia` oppure `Lombardia`. |
+| `includi_milano` | Per la Lombardia: `true` include Milano nella stima; `false` lo esclude prima della standardizzazione. In Italia Milano e incluso. |
+| `scelta_K` | `automatico`: proposta di gomito riproducibile, da verificare sui dendrogrammi; `manuale`: usa K0 e K finale indicati sotto. |
+| `K_min`, `K_max` | Intervallo dei K candidati; default 2...15. La curva comprende anche K=1 come riferimento per l'inerzia totale. Limite supportato: 15. |
+| `K0_manuale` | K preliminare su D0 in modalita manuale; default 8. |
+| `K_finale_manuale` | K finale all'alpha scelto in modalita manuale; default 8. Puo differire da K0. |
+| `scelta_alpha` | Automatico: minimo di abs(Q0norm-Q1norm) a K0 fissato. Manuale: valore di alpha_manuale indicato dall'utente. |
+| `criterio_alpha` | Unico criterio: `paper_assoluto`, minimo di abs(Q0norm-Q1norm) a K0 fissato. |
+| `alpha_step` | Passo della griglia in (0,1]; default `0.001`. Gli estremi 0 e 1 sono sempre inclusi, anche se il passo non divide esattamente 1. |
+| `alpha_manuale` | `0.02` riproduce il valore fissato nel fit spaziale dell'allegato. |
+| `palette_mappe` | `sobria` riprende i toni attenuati dei grafici precedenti; `pastello` offre un'alternativa piu chiara. |
+| `salva_distanze` | `true` salva anche D0, D1 e le distanze normalizzate nell'RData finale. |
+
+**K viene ora selezionato, non fissato a 8.** La sequenza e quella della
+Sezione 5.5 del paper: K0 su D0, alpha a K0 fissato, poi K finale
+all'alpha selezionato. Le quattro mappe rappresentano **alpha=0, alpha
+scelto/ottimo, alpha=0.10 e alpha=1**, tutte allo stesso K finale. Se
+Milano e escluso, viene mostrato dopo il fit come gruppo aggiuntivo
+C(K+1); per K=8 e ancora C9. I tagli K=8 degli output storici restano
+effettivamente tagli a otto gruppi.
+
+Con `alpha_step: 0.001` la griglia contiene 1001 valori, incluso
+**0.038**. Il suo inserimento fra i candidati non garantisce che sia
+nuovamente scelto: l'alpha ottimo viene ricalcolato sui dati,
+sull'opzione Milano e sul K0 correnti. Per disegnare esattamente il caso
+0.038 usare `scelta_alpha: "manuale"` e `alpha_manuale: 0.038`. Una
+griglia piu fitta richiede piu calcoli, specialmente sul dataset
+nazionale; `alpha_step: 0.1` ripristina gli 11 valori della griglia
+originale.
+
+Il report stampa la coppia **(K finale, alpha scelto)** e le decisioni
+dei tre passaggi; le esporta in `Selezione_K_alpha.csv` e
+`Scelta_finale.txt`. Gli output comprendono anche la matrice ARI 4x4, i
+sei confronti a coppie, una mappa di calore degli ARI e la palette
+effettivamente utilizzata. Si aggiungono la figura a 28 pannelli per
+K=2...15, le due matrici ARI fra K a alpha costante, le 14 matrici ARI
+ad ogni K fisso sulla griglia alpha=0, 0.10, ..., 1 e i profili HTML
+interattivi con statistiche di centralita, dispersione e forma, su tre
+scale.
+
+Sono inclusi anche tutti i gruppi di output dello script originale,
+descritti nella sezione dedicata. Il file `Indice_output_originali.csv`
+verifica a fine esecuzione la presenza dei file attesi;
+`Errori_output_originali.csv` riporta gli eventuali errori effettivi
+delle diagnostiche.
+
+Le trasformazioni sono valutate sul dataset selezionato, come
+nell'originale. Non si introducono mediane, IQR o massimi nazionali
+fissati per la Lombardia. L'esclusione di Milano avviene prima di CData
+e quindi prima di tali calcoli. **La costruzione di D1 cambia su
+richiesta:** ora si usano distanze geodetiche fra i centroidi gia
+presenti nei dati, sull'ellissoide WGS84, in metri. Le ricodifiche, la
+somma per codice, la divisione per area e le formule mediana/IQR restano
+quelle originali. Su richiesta, D0 usa ora solo le 12 variabili
+Local_Units, Value_Added ed Employed; Revenues e Workers sono esclusi.
+Una sola riga per LAU_Code viene conservata con filter dopo
+l'aggregazione, prima dell'opzione Milano, di CData e della
+standardizzazione.
+
+**Stato della consegna:** documento preparato e controllato
+staticamente; non eseguito in R nell'ambiente della chat. I risultati
+numerici e le mappe verranno prodotti sulla macchina che esegue questo
+documento. Non sono stati ricalcolati in chat nuovi valori di K o alpha.
+
+## Cosa riporta il paper e cosa si ricalcola
+
+Riferimento: file allegati `main.tex` e
+`FEEM_FragilityClustering-1.pdf`, Sezione 5.5 (pp. 19-20) e Results
+(Sezione 6).
+
+| Ambito | Valori riportati nei Results | Interpretazione |
+|:-----------------------|:-----------------------|:-----------------------|
+| Lombardia senza Milano | K=8; alpha=0 per il non spaziale, alpha=0.10 per lo spaziale. | Risultati del paper, da distinguere dalla nuova selezione sui dati dello script. |
+| Italia | alpha=0.02; confronti a K=3, 8 e 15. | Il testo precisa che i tre K sono esplorativi/comparativi, non il risultato di un unico criterio statistico di arresto (p. 26). |
+| Lombardia con Milano | Nessuna coppia selezionata dichiarata nel paper. | Va ricalcolata; i valori senza Milano non sono automaticamente trasferibili. |
+
+Per K il paper richiede gomito e ispezione del dendrogramma, ma **non
+specifica un algoritmo numerico univoco** per il gomito. L'automatismo
+qui sotto rende operativa questa parte con una regola dichiarata, non
+attribuita al paper. La modalita manuale permette di registrare la
+scelta dopo l'ispezione visuale.
+
+I workspace storici contengono 20 colonne, appartenenti a Local_Units,
+Value_Added, Revenues, Workers ed Employed. **Il nuovo fit ne usa solo
+12**: Local_Units, Value_Added ed Employed, ciascuna distinta per
+Industry/Services e Suspended/Active. Il manifesto elenca i nomi e
+l'ordine effettivi. Revenues e Workers restano disponibili nei dati
+grezzi e nelle tabelle descrittive storiche, ma non entrano nella
+matrice economica del clustering.
+
+La discrepanza sulle distanze e risolta con la geodetica WGS84. Le righe
+comunali ripetute vengono ora filtrate: un comune corrisponde a una
+osservazione. Le formule della doppia normalizzazione restano invariate
+e sono ricalcolate sul nuovo campione. I valori pubblicati non sono
+imposti al nuovo fit.
+
+## Duplicati riscontrati nei due workspace allegati
+
+Questo riscontro riguarda gli oggetti gia salvati negli RData, non un
+nuovo run. L'inventario strutturale disponibile riporta:
+
+| Workspace | Righe di Xmat_nogeo | Colonne economiche | Comuni distinti nel fit | Righe in eccesso |
+|:--------------|--------------:|--------------:|--------------:|--------------:|
+| Res_national_11082024.RData | 1523 | 20 | 1506 | 17 |
+| res1911.RData | 1522 | 20 | 1505 | 17 |
+
+Il primo nome e storico: il campione salvato e lombardo. Nel secondo
+manca Milano fra le righe stimate. I dodici codici ripetuti sono gli
+stessi:
+
+| Codice | Comune                | Righe |
+|:-------|:----------------------|------:|
+| 015251 | Vermezzo con Zelo     |     2 |
+| 018193 | Colli Verdi           |     4 |
+| 098062 | Castelgerundo         |     2 |
+| 012143 | Cadrezzate con Osmate |     2 |
+| 019116 | Piadena Drizzona      |     2 |
+| 013254 | Centro Valle Intelvi  |     3 |
+| 013255 | Solbiate con Cagno    |     2 |
+| 020057 | San Giorgio Bigarello |     2 |
+| 020072 | Borgo Mantovano       |     3 |
+| 020073 | Borgocarbonara        |     2 |
+| 097008 | Bellano               |     2 |
+| 097093 | Valvarrone            |     3 |
+
+Nei vecchi workspace, con peso 1/n per riga, un comune con m righe
+riceveva peso complessivo m/n. Nel nuovo run le copie sono filtrate
+prima del fit, conservando una riga con il totale gia aggregato. L'audit
+documenta i conteggi prima/dopo e verifica che nel campione finale non
+restino codici ripetuti. La verifica degli RData storici resta
+disponibile nel blocco R indipendente in fondo al documento e non viene
+confusa con i conteggi del nuovo fit.
+
+## File e pacchetti
+
+Si usano gli stessi tre percorsi relativi dell'ultimo allegato:
+
+-   `DPCM/DPCM_cleaned.xlsx`;
+-   `anagrafica comuni/Manually_matched_LAUs_Oct2023.xlsx`, foglio
+    `Modified`;
+-   `../../Dati/DataManagement/Original data/anagrafica comuni/LAU2021_Eurostat_Italy.RData`.
+
+I percorsi sono relativi a `base_path`. Il documento usa il flusso di
+lettura originale, non i workspace di risultati `res1911.RData` e
+`Res_national_11082024.RData`. Per usare questi ultimi occorrerebbe un
+diverso blocco di caricamento, che qui non viene sostituito a quello
+richiesto.
+
+Se necessario, installare una volta i pacchetti nella console R:
+
+```{r installazione, eval=FALSE}
+install.packages(c("rmarkdown", "knitr", "sf", "tidyverse", "readxl",
+                   "pracma", "cluster", "fpc", "factoextra", "NbClust",
+                   "ClustGeo", "viridis", "ggpubr", "mclust", "reshape2", "geosphere", "DT", "htmlwidgets"))
+```
+
+`AuxFuns_NbClust.R` definisce `NbClust_mod`, mentre il blocco Ward
+dell'allegato chiama `NbClust`. Le diagnostiche ripristinate usano
+`NbClust` come nell'originale; il confronto principale usa il K finale
+selezionato. Se il file ausiliario si trova in `base_path`, la sua
+definizione viene comunque caricata.
+
+# Impostazioni
+
+```{r impostazioni, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = FALSE,
+                      cache = FALSE, fig.width = 12, fig.height = 10)
+stopifnot(params$area %in% c("Italia", "Lombardia"),
+          is.logical(params$includi_milano), length(params$includi_milano) == 1L,
+          !is.na(params$includi_milano),
+          params$scelta_K %in% c("automatico", "manuale"),
+          is.numeric(params$K_min), length(params$K_min) == 1L,
+          is.finite(params$K_min), params$K_min == as.integer(params$K_min),
+          is.numeric(params$K_max), length(params$K_max) == 1L,
+          is.finite(params$K_max), params$K_max == as.integer(params$K_max),
+          params$K_min >= 2, params$K_max <= 15, params$K_min < params$K_max,
+          is.numeric(params$K0_manuale), length(params$K0_manuale) == 1L,
+          is.finite(params$K0_manuale), params$K0_manuale == as.integer(params$K0_manuale),
+          is.numeric(params$K_finale_manuale), length(params$K_finale_manuale) == 1L,
+          is.finite(params$K_finale_manuale), params$K_finale_manuale == as.integer(params$K_finale_manuale),
+          params$scelta_alpha %in% c("automatico", "manuale"),
+          identical(params$criterio_alpha, "paper_assoluto"),
+          is.numeric(params$alpha_step), length(params$alpha_step) == 1L,
+          is.finite(params$alpha_step),
+          params$alpha_step > 0, params$alpha_step <= 1,
+          is.numeric(params$alpha_manuale), length(params$alpha_manuale) == 1L,
+          is.finite(params$alpha_manuale),
+          params$alpha_manuale >= 0, params$alpha_manuale <= 1,
+          params$palette_mappe %in% c("sobria", "pastello"))
+
+base_path <- normalizePath(path.expand(params$base_path), mustWork = TRUE)
+# Equivalente al setwd(base_path) dell'originale per i chunk successivi.
+knitr::opts_knit$set(root.dir = base_path)
+AOI <- if (params$area == "Italia") "Italy" else "Lombardy"
+includi_milano <- if (AOI == "Italy") TRUE else params$includi_milano
+variabili_clustering <- c(
+  "Local_Units_Industry_Suspended", "Local_Units_Services_Suspended",
+  "Value_Added_Industry_Suspended", "Value_Added_Services_Suspended",
+  "Employed_Industry_Suspended", "Employed_Services_Suspended",
+  "Local_Units_Industry_Active", "Local_Units_Services_Active",
+  "Value_Added_Industry_Active", "Value_Added_Services_Active",
+  "Employed_Industry_Active", "Employed_Services_Active")
+stopifnot(length(variabili_clustering) == 12L,
+  !any(grepl("^(Revenues|Workers)_", variabili_clustering)))
+K_candidati <- seq.int(as.integer(params$K_min), as.integer(params$K_max))
+if (params$scelta_K == "manuale") {
+  stopifnot(params$K0_manuale %in% K_candidati,
+            params$K_finale_manuale %in% K_candidati)
+}
+alpha_fisso <- 0.10
+# L'aggiunta esplicita di 1 copre anche passi come 0.03 o 0.3.
+# L'arrotondamento elimina il rumore numerico dei passi decimali.
+range_alpha <- sort(unique(c(0,
+  round(seq(0, 1, by = params$alpha_step), digits = 12L), 1)))
+stopifnot(range_alpha[1L] == 0, tail(range_alpha, 1L) == 1,
+          all(range_alpha >= 0 & range_alpha <= 1))
+
+nome_run <- paste(params$area,
+                  if (includi_milano) "con_Milano" else "senza_Milano",
+                  format(Sys.time(), "%Y%m%d_%H%M%S"), sep = "_")
+output_dir <- file.path(base_path, "Output_Selezione_K_alpha_RMarkdown", nome_run)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+writeLines("IN_CORSO: l'attestato finale viene scritto solo a esecuzione completata.",
+            file.path(output_dir, "STATO.txt"))
+
+library(sf)
+library(tidyverse)
+library(readxl)
+library(pracma)
+library(cluster)
+library(stats)
+library(fpc)
+library(factoextra) 
+library(NbClust)
+library(ClustGeo)
+library(viridis)
+library(ggpubr)
+if (!requireNamespace("mclust", quietly = TRUE)) {
+  stop("Installare il pacchetto mclust per calcolare gli ARI.")
+}
+if (!requireNamespace("reshape2", quietly = TRUE)) {
+  stop("Installare il pacchetto reshape2, usato dalla correlazione originale.")
+}
+if (!requireNamespace("geosphere", quietly = TRUE)) {
+  stop("Installare geosphere: install.packages('geosphere').")
+}
+
+if (!requireNamespace("DT", quietly = TRUE) ||
+    !requireNamespace("htmlwidgets", quietly = TRUE)) {
+  stop("Installare DT e htmlwidgets: install.packages(c('DT', 'htmlwidgets')).")
+}
+
+'%notin%' <- Negate('%in%')
+# Compatibilita tra versioni: stesso controllo di vettore vuoto usato nel ciclo.
+if (!exists("is_empty", mode = "function")) is_empty <- rlang::is_empty
+if (file.exists(file.path(base_path, "AuxFuns_NbClust.R"))) {
+  source(file.path(base_path, "AuxFuns_NbClust.R"), encoding = "UTF-8")
+}
+writeLines(capture.output(sessionInfo()), file.path(output_dir, "sessionInfo_iniziale.txt"))
+knitr::kable(data.frame(Area = params$area, Selezione_K = params$scelta_K,
+  K_min = min(K_candidati), K_max = max(K_candidati),
+  Milano_nella_stima = includi_milano,
+  Selezione_alpha = params$scelta_alpha,
+  Criterio_alpha = params$criterio_alpha,
+  Passo_alpha = params$alpha_step, Numero_alpha = length(range_alpha),
+  Palette_mappe = params$palette_mappe,
+  Riferimento_trasformazioni = "dataset selezionato"))
+```
+
+# Lettura e pretrattamento originali
+
+Il blocco seguente riprende il codice dell'allegato: stessa lettura,
+stessa tabella manuale, stesso ciclo di ricodifica, stesso `group_by`
+con `mutate` e stesso `left_join`. In questo blocco la somma e ancora
+ripetuta sulle righe; il filtro successivo conserva una sola copia del
+totale per comune. Anche le eventuali ricodifiche problematiche
+dell'originale vengono mantenute. Non si applicano qui le correzioni di
+riconciliazione dei precedenti script.
+
+```{r dati-originali, results='hide'}
+##### DPCM data
+DPCM <- read_excel("data/DPCM/DPCM_cleaned.xlsx")
+
+##### Municipalities registry
+ManualMatchLAUs <- read_excel("data/anagrafica_comuni/Manually_matched_LAUs_Oct2023.xlsx", sheet = "Modified")
+ManualMatchLAUs <- ManualMatchLAUs %>%
+  mutate(across(c(`Denominazione Comune NEW`), toupper),
+         across(c(`Denominazione Comune NEW`), stringr::str_to_title)) %>%
+  dplyr::select(LAU_Code_old = `Codice Istat Comune`,
+                LAU_Code_new = `Codice Istat Comune NEW`) %>%
+  distinct()
+
+# load("../../Dati/DataManagement/Data transformed/Unnormalized/Data_CrossSection_C2.RData")
+load("data/anagrafica_comuni/LAU2021_Eurostat_Italy.RData")
+
+DPCM_red <- DPCM %>%
+  dplyr::rename(LAU_Code = ISTAT_Code_LAU) %>%
+  dplyr::select(-Name_LAU)
+# DPCM_red <- data %>%
+#   dplyr::rename(LAU_Code = AUX_IstatMunicipalityCode)
+
+codes <- stringr::str_pad(string = ManualMatchLAUs$LAU_Code_old,width = 6,pad = "0")
+codes_new <- stringr::str_pad(string = ManualMatchLAUs$LAU_Code_new,width = 6,pad = "0")
+for (r in 1:dim(DPCM_red)[1]) {
+  pos <- which(DPCM_red$LAU_Code[r] == codes)
+  if (!is_empty(pos)) {
+    cat(paste0("Row ",r," has a different code\n"))
+    DPCM_red[r,]$LAU_Code <- codes_new[pos]
+  }
+}
+DPCM_red <- DPCM_red %>%
+  group_by(LAU_Code) %>%
+  mutate(across(is.numeric, function(x) sum(x,na.rm=T))) %>%
+  ungroup()
+
+
+DPCM_red <- left_join(x = LAU_IT_sf, y = DPCM_red, by = c("LAU_Code"))
+```
+
+## Scelta del dataset
+
+Il filtro Lombardia fisso che nell'allegato ricompare dentro CData e
+sostituito da questa selezione unica. Seguono il filtro delle copie
+comunali e, solo in Lombardia, l'eventuale esclusione di Milano.
+
+```{r scelta-dataset}
+if (AOI == "Lombardy") {
+  DPCM_red <- DPCM_red %>%
+    filter(NUTS2_Name == "Lombardia")
+}
+```
+
+## Una sola riga per comune: filtro dopo l'aggregazione
+
+La somma originale per codice e gia stata eseguita: le righe ripetute
+contengono copie del totale comunale. Si controlla che le copie
+concordino sulle 12 quantita utilizzate, sull'area e sui centroidi, poi
+si conserva la prima riga con `filter(!duplicated(LAU_Code))`. Non si
+usa `filter(n() == 1)`, che eliminerebbe interi comuni ripetuti. Il
+controllo sull'anagrafica garantisce una sola geometria per codice.
+
+```{r filtro-duplicati}
+conta_codici <- function(dati, campo, fase) {
+  codici <- as.character(dati[[campo]])
+  validi <- !is.na(codici) & nzchar(codici)
+  frequenze <- table(codici[validi])
+  data.frame(fase = fase, righe = length(codici), codici_mancanti = sum(!validi),
+    comuni_distinti = length(frequenze), comuni_ripetuti = sum(frequenze > 1L),
+    righe_in_eccesso = sum(pmax(as.integer(frequenze) - 1L, 0L)))
+}
+stopifnot(!anyDuplicated(LAU_IT_sf$LAU_Code),
+  !anyNA(DPCM_red$LAU_Code), all(nzchar(as.character(DPCM_red$LAU_Code))))
+colonne_verifica_copie <- c(variabili_clustering, "Area_km2", "Lon_centr_LAU", "Lat_centr_LAU")
+Controllo_duplicati_valori <- sf::st_drop_geometry(DPCM_red) %>%
+  group_by(LAU_Code) %>%
+  summarise(Comune = first(LAU_Name), righe = n(),
+    across(all_of(colonne_verifica_copie), function(x) n_distinct(x),
+      .names = "n_valori_{.col}"), .groups = "drop") %>%
+  filter(righe > 1L)
+if (nrow(Controllo_duplicati_valori)) {
+  valori_diversi <- as.matrix(dplyr::select(Controllo_duplicati_valori, starts_with("n_valori_")))
+  if (any(valori_diversi > 1L)) {
+    stop("Copie dello stesso LAU_Code con valori diversi: verificare i dati prima del filtro.")
+  }
+}
+Comuni_duplicati_prima_filtro <- Controllo_duplicati_valori %>%
+  dplyr::select(LAU_Code, Comune, righe) %>%
+  mutate(righe_rimosse = righe - 1L)
+Righe_rimosse_duplicati <- sf::st_drop_geometry(DPCM_red) %>%
+  mutate(id_riga_prima_filtro = row_number()) %>%
+  filter(duplicated(LAU_Code)) %>%
+  dplyr::select(id_riga_prima_filtro, LAU_Code, LAU_Name, all_of(variabili_clustering))
+Audit_prima_filtro <- conta_codici(DPCM_red, "LAU_Code", "Area prima del filtro duplicati")
+DPCM_red <- DPCM_red %>% ungroup() %>% filter(!duplicated(LAU_Code))
+Audit_dopo_filtro <- conta_codici(DPCM_red, "LAU_Code", "Area dopo il filtro duplicati")
+Audit_filtro_duplicati <- bind_rows(Audit_prima_filtro, Audit_dopo_filtro)
+stopifnot(Audit_dopo_filtro$comuni_ripetuti == 0L,
+  Audit_dopo_filtro$righe == Audit_prima_filtro$comuni_distinti,
+  Audit_prima_filtro$righe - Audit_dopo_filtro$righe == nrow(Righe_rimosse_duplicati),
+  sum(Comuni_duplicati_prima_filtro$righe_rimosse) == nrow(Righe_rimosse_duplicati))
+write.csv(Audit_filtro_duplicati, file.path(output_dir, "Audit_filtro_duplicati.csv"), row.names = FALSE)
+write.csv(Comuni_duplicati_prima_filtro, file.path(output_dir, "Comuni_duplicati_prima_filtro.csv"), row.names = FALSE)
+write.csv(Righe_rimosse_duplicati, file.path(output_dir, "Righe_rimosse_duplicati.csv"), row.names = FALSE)
+write.csv(Controllo_duplicati_valori, file.path(output_dir, "Controllo_duplicati_valori.csv"), row.names = FALSE)
+knitr::kable(Audit_filtro_duplicati, row.names = FALSE)
+knitr::kable(Comuni_duplicati_prima_filtro, row.names = FALSE)
+```
+
+## Opzione Milano, dopo il filtro delle copie
+
+```{r opzione-milano}
+DPCM_prima_Milano <- DPCM_red
+if (AOI == "Lombardy" && !includi_milano) {
+  DPCM_red <- DPCM_red %>% filter(LAU_Code != "015146")
+}
+```
+
+## CData: 12 variabili e stesse formule di trasformazione
+
+La selezione e limitata esplicitamente alle 12 variabili concordate. Si
+conservano letteralmente la divisione per `Area_km2` e la
+standardizzazione con mediana e differenza fra quantili 0.75 e 0.25. Le
+tre altitudini sono trattate come nell'originale ma rimangono escluse
+dalla matrice economica usata nel clustering. Lon e Lat non vengono
+standardizzate. Non vengono introdotti z-score, MAD, logaritmi o
+imputazioni.
+
+```{r cdata-originale}
+CData <- DPCM_red %>%
+  # Filter non-missing data
+  filter(!is.na(Local_Units_Industry_Active)) %>%
+  # Select numeric variables
+  dplyr::select(Area_km2,LAU_Code,Lon_centr_LAU,Lat_centr_LAU,
+                Alt_mean,Alt_min,Alt_max,
+                all_of(variabili_clustering)) %>%
+  mutate(across(c(is.numeric,
+                  -contains("Alt"),
+                  -contains("Lon"),-contains("Lat")), function(x) x/Area_km2)) %>%
+  select(-c(Area_km2)) %>%
+  mutate(across(c(is.numeric,
+                  -contains("Lon"),-contains("Lat")), function(x) (x - median(x,na.rm = T))/(quantile(x,0.75,na.rm = T)-quantile(x,0.25,na.rm = T))))
+```
+
+# Distanze e pesi
+
+D0 conserva la chiamata `get_dist` sulle variabili economiche. Per D1 si
+riutilizzano le colonne Lon_centr_LAU e Lat_centr_LAU, interpretate come
+longitudine/latitudine geografiche WGS84. Si calcola la distanza
+geodetica sull'ellissoide WGS84 con `geosphere::distGeo`, in metri,
+senza ricalcolare i centroidi e senza utilizzare distanze minime fra
+poligoni. Si mantiene la divisione di D0 e D1 per i rispettivi massimi.
+
+Il metodo e dichiarato esplicitamente: la geodetica ellissoidale WGS84
+non dipende dall'opzione globale `sf_use_s2()`. Non e la distanza
+euclidea applicata ai gradi, ne la sola conversione numerica di un'unita
+di misura.
+
+L'unico adattamento tecnico e `n <- nrow(Xmat_nogeo)`: un oggetto `dist`
+non ha `nrow`, quindi `nrow(DMat)` dell'allegato non fornisce la
+dimensione necessaria per costruire i pesi uniformi.
+
+```{r distanze-originali}
+st_geometry(CData) <- NULL
+Xmat_geo <- as.matrix(CData[, 2:3])
+Xmat_nogeo <- as.matrix(CData[, -c(1:6)])
+DPCM_red2 <- DPCM_red %>% filter(!is.na(Local_Units_Industry_Active))
+
+DMat <- get_dist(Xmat_nogeo)
+DPCM_red2$AvgDist_D0 <- rowMeans(as.matrix(DMat))
+D0 <- DMat
+n <- nrow(Xmat_nogeo)
+stopifnot(ncol(Xmat_geo) == 2L, all(is.finite(Xmat_geo)),
+  all(abs(Xmat_geo[, 1L]) <= 180), all(abs(Xmat_geo[, 2L]) <= 90))
+distanza_WGS84 <- function(p1, p2) {
+  geosphere::distGeo(p1, p2, a = 6378137, f = 1 / 298.257223563)
+}
+DMat_geo <- as.dist(geosphere::distm(Xmat_geo, fun = distanza_WGS84))
+DPCM_red2$AvgDist_D1 <- rowMeans(as.matrix(DMat_geo))
+D1 <- DMat_geo
+D0_std <- D0 / max(D0)
+D1_std <- D1 / max(D1)
+wt <- rep(1 / n, n)
+
+stopifnot(n > max(15L, K_candidati), ncol(Xmat_nogeo) == 12L,
+          identical(colnames(Xmat_nogeo), variabili_clustering),
+          !anyDuplicated(DPCM_red2$LAU_Code),
+          nrow(DPCM_red2) == n, attr(D0, "Size") == n, attr(D1, "Size") == n,
+          identical(as.character(CData$LAU_Code), as.character(DPCM_red2$LAU_Code)),
+          all(is.finite(D0)), all(is.finite(D1)), max(D0) > 0, max(D1) > 0)
+
+# Un ID di riga aggiunto DOPO il pretrattamento evita join ambigui sui duplicati.
+# Non entra in CData, Xmat_nogeo, Xmat_geo o nelle distanze.
+DPCM_red2$id_osservazione <- seq_len(n)
+audit_dimensioni <- data.frame(
+  Osservazioni_nella_stima = n,
+  Codici_comunali_distinti = dplyr::n_distinct(DPCM_red2$LAU_Code),
+  Righe_duplicate_per_codice = n - dplyr::n_distinct(DPCM_red2$LAU_Code))
+knitr::kable(audit_dimensioni)
+```
+
+Nel campione finale ogni comune compare una sola volta: n coincide con
+il numero di codici distinti e il peso 1/n e uniforme anche fra comuni.
+
+## Manifesto delle variabili e audit delle unita statistiche
+
+Questo blocco legge colonne e frequenze del run corrente; non modifica
+CData, le ricodifiche, i valori, le distanze o i pesi. Il controllo
+riguarda quindi il nostro caso effettivo, oltre alla proprieta generale
+di group_by/mutate.
+
+```{r audit-variabili-comuni}
+variabili_attese <- variabili_clustering
+stopifnot(setequal(colnames(Xmat_nogeo), variabili_attese))
+Manifesto_variabili <- data.frame(posizione_D0 = seq_len(ncol(Xmat_nogeo)),
+  variabile = colnames(Xmat_nogeo), trasformazione = "densita/km2, poi mediana/IQR")
+knitr::kable(Manifesto_variabili, row.names = FALSE)
+write.csv(Manifesto_variabili, file.path(output_dir, "Variabili_clustering.csv"), row.names = FALSE)
+
+Audit_unita_statistiche <- dplyr::bind_rows(
+  conta_codici(DPCM, "ISTAT_Code_LAU", "DPCM in ingresso, prima delle ricodifiche"),
+  conta_codici(LAU_IT_sf, "LAU_Code", "Anagrafica comunale"),
+  Audit_filtro_duplicati,
+  conta_codici(DPCM_prima_Milano, "LAU_Code", "Area selezionata, prima dell'opzione Milano"),
+  conta_codici(DPCM_red2, "LAU_Code", "Campione finale di stima"))
+Comuni_duplicati_stima <- sf::st_drop_geometry(DPCM_red2) %>%
+  group_by(LAU_Code) %>%
+  summarise(Comune = first(LAU_Name), righe = n(), .groups = "drop") %>%
+  filter(righe > 1L) %>%
+  mutate(righe_in_eccesso = righe - 1L, peso_complessivo_nel_fit = righe / n) %>%
+  arrange(desc(righe), LAU_Code)
+knitr::kable(Audit_unita_statistiche, row.names = FALSE)
+knitr::kable(Comuni_duplicati_stima, digits = 6, row.names = FALSE)
+stopifnot(nrow(Comuni_duplicati_stima) == 0L,
+  n == dplyr::n_distinct(DPCM_red2$LAU_Code))
+write.csv(Audit_unita_statistiche, file.path(output_dir, "Audit_unita_statistiche.csv"), row.names = FALSE)
+write.csv(Comuni_duplicati_stima, file.path(output_dir, "Comuni_duplicati_stima.csv"), row.names = FALSE)
+```
+
+# Selezione di K e alpha: i tre passaggi del paper
+
+La Sezione 5.5 descrive una selezione **sequenziale**, non la
+minimizzazione di un unico punteggio sull'intera griglia K x alpha:
+
+1.  scegliere K0 usando solo D0, con gomito e dendrogramma;
+2.  fissare K=K0 e scegliere alpha con il solo criterio paper_assoluto;
+3.  fissare quell'alpha e riesaminare K sul Ward misto, ottenendo K
+    finale.
+
+Se K finale differisce da K0, **non si ricalcola automaticamente alpha
+al nuovo K**: sarebbe un'iterazione ulteriore non descritta nel paper.
+Il report mostra entrambi i K per rendere verificabile il percorso. I
+quattro alpha vengono poi confrontati tutti allo stesso K finale.
+
+## Regola operativa del gomito
+
+Il paper non definisce una formula univoca per scegliere il gomito. Per
+produrre una proposta riproducibile si normalizzano gli assi della curva
+dell'inerzia interna W(K), da K=1 a K massimo, nell'intervallo [0,1]. Si
+sceglie, fra i K candidati, il punto con maggiore distanza verticale
+sotto la retta che congiunge gli estremi. A parita numerica si sceglie K
+minore. La regola dipende dal K massimo esaminato: e una
+**operazionalizzazione esplicita del gomito**, non una formula
+attribuita agli autori e non una dimostrazione di un unico K vero.
+
+Le curve e i dendrogrammi sono sempre esportati per l'ispezione. Con
+`scelta_K: "manuale"`, `K0_manuale` e `K_finale_manuale` si registrano
+invece le due scelte visuali. Gli indici silhouette, CH, Dunn e gli
+altri output originali restano diagnostiche di supporto, senza voto di
+maggioranza o sostituzione automatica della sequenza del paper.
+
+Per il passaggio finale si usa la stessa pseudo-inerzia mista
+minimizzata da ClustGeo:
+
+$$
+W_\alpha(P_K)=(1-\alpha)W_{D_{0,\mathrm{std}}}(P_K)
+                 +\alpha W_{D_{1,\mathrm{std}}}(P_K).
+$$
+
+Questa corrisponde alle dissimilarita
+$D_\alpha=\sqrt{(1-\alpha)D_{0,\mathrm{std}}^2+
+\alpha D_{1,\mathrm{std}}^2}$. Non si usa la media lineare delle
+distanze. Le due componenti vengono calcolate con
+`ClustGeo::withindiss`, con gli stessi pesi 1/n del fit; non si modifica
+alcuna variabile in ingresso.
+
+```{r funzioni-selezione}
+# In caso di parita entro la tolleranza, preferisce il valore minore.
+scegli_minimo <- function(valore, candidato, tolleranza = 1e-12) {
+  ok <- is.finite(valore)
+  if (!any(ok)) stop("Nessun punteggio finito disponibile per la selezione.")
+  migliore <- min(valore[ok])
+  min(candidato[ok & valore <= migliore + tolleranza])
+}
+
+# Quote native di ClustGeo e unico criterio del paper.
+tabella_choicealpha <- function(curva, k) {
+  tab <- data.frame(K = k, alpha = curva$range.alpha,
+    Q0 = curva$Q[, 1L], Q1 = curva$Q[, 2L],
+    Q0norm = curva$Qnorm[, 1L], Q1norm = curva$Qnorm[, 2L],
+    gap_Qnorm = abs(curva$Qnorm[, 1L] - curva$Qnorm[, 2L]))
+  tab
+}
+
+T0_std <- ClustGeo::inertdiss(D0_std, wt = wt)
+T1_std <- ClustGeo::inertdiss(D1_std, wt = wt)
+stopifnot(T0_std > 0, T1_std > 0,
+  T0_std <= 0.5 + 1e-10, T1_std <= 0.5 + 1e-10)
+
+descrizione_criterio_alpha <- "Equilibrio assoluto (paper)"
+
+curva_gomito <- function(albero, alpha, fase) {
+  tab <- dplyr::bind_rows(lapply(seq_len(max(K_candidati)), function(kk) {
+    g <- cutree(albero, k = kk)
+    data.frame(K = kk,
+      W0 = ClustGeo::withindiss(D0_std, g, wt = wt),
+      W1 = ClustGeo::withindiss(D1_std, g, wt = wt))
+  }))
+  tab$W_mista <- (1 - alpha) * tab$W0 + alpha * tab$W1
+  T_mista <- (1 - alpha) * T0_std + alpha * T1_std
+  tab$Q_mista <- 1 - tab$W_mista / T_mista
+  escursione <- tab$W_mista[1L] - tail(tab$W_mista, 1L)
+  if (!is.finite(escursione) || escursione <= 0) {
+    stop("Curva di inerzia priva di escursione: il gomito non e identificabile.")
+  }
+  tab$x_norm <- (tab$K - 1) / (max(tab$K) - 1)
+  tab$W_norm <- (tab$W_mista - tail(tab$W_mista, 1L)) / escursione
+  tab$score_gomito <- (1 - tab$x_norm) - tab$W_norm
+  tab$candidato <- tab$K %in% K_candidati
+  tab$fase <- fase
+  tab$alpha <- alpha
+  # In un Ward le inerzie interne devono diminuire quando K aumenta.
+  stopifnot(all(is.finite(tab$W_mista)),
+    all(diff(tab$W_mista) <= 1e-9 * max(1, T_mista)))
+  tab
+}
+
+proponi_K <- function(tab) {
+  candidati <- tab[tab$candidato, ]
+  if (max(candidati$score_gomito) <= 1e-10) {
+    warning("Gomito non marcato: ispezionare curva e dendrogramma; parita risolte a K minore.")
+  }
+  as.integer(scegli_minimo(-candidati$score_gomito, candidati$K))
+}
+```
+
+## Passaggio 1: K0 solo economico
+
+```{r scelta-K0}
+# Mantiene anche l'albero nella scala D0 originale per gli output storici.
+tree_D0 <- hclustgeo(D0 = D0, wt = rep(1/n, n))
+diagnostica_K0 <- curva_gomito(tree_D0, alpha = 0, fase = "1. K0 su D0")
+K0_automatico <- proponi_K(diagnostica_K0)
+K0 <- if (params$scelta_K == "automatico") K0_automatico else as.integer(params$K0_manuale)
+diagnostica_K0$selezionato <- diagnostica_K0$K == K0
+knitr::kable(data.frame(K0_usato = K0, K0_gomito_automatico = K0_automatico,
+  Modalita = params$scelta_K))
+```
+
+## Passaggio 2: alpha a K0 fissato
+
+Si usa soltanto il criterio paper_assoluto, equazione (7) del paper:
+
+$$
+\alpha^*=\mathop{\arg\min}_{\alpha\ \mathrm{nella\ griglia}}
+\left|Q_{0,\mathrm{norm}}(P_{K_0}^{\alpha})
+      -Q_{1,\mathrm{norm}}(P_{K_0}^{\alpha})\right|.
+$$
+
+Le Qnorm sono quelle native di ClustGeo, normalizzate rispetto ai due
+estremi allo stesso K0. La griglia usa alpha_step e comprende sempre 0
+e 1. A parita numerica si sceglie l'alpha minore. In modalita manuale
+resta disponibile il valore esplicitamente indicato dall'utente, con il
+minimo automatico riportato per confronto.
+
+```{r scelta-alpha}
+cr_K0 <- choicealpha(D0_std, D1_std, range.alpha = range_alpha,
+  K = K0, wt = wt, graph = FALSE)
+curva_alpha_K0 <- tabella_choicealpha(cr_K0, K0)
+stopifnot(all(is.finite(curva_alpha_K0$gap_Qnorm)))
+alpha_automatico <- scegli_minimo(curva_alpha_K0$gap_Qnorm, curva_alpha_K0$alpha)
+alpha_ottimo <- if (params$scelta_alpha == "automatico") {
+  alpha_automatico
+} else params$alpha_manuale
+righe_alpha <- sort(unique(c(1L, nrow(curva_alpha_K0),
+  which(abs(curva_alpha_K0$alpha - alpha_automatico) < 1e-12),
+  which(abs(curva_alpha_K0$alpha - alpha_ottimo) < 1e-12),
+  which(abs(curva_alpha_K0$alpha - alpha_fisso) < 1e-12))))
+knitr::kable(curva_alpha_K0[righe_alpha, ], digits = 5, row.names = FALSE)
+```
+
+## Passaggio 3: K finale all'alpha scelto
+
+```{r scelta-K-finale}
+tree_alpha_scelto <- hclustgeo(D0_std, D1_std, alpha = alpha_ottimo, wt = wt)
+diagnostica_K_finale <- curva_gomito(tree_alpha_scelto, alpha = alpha_ottimo,
+  fase = "3. K finale ad alpha scelto")
+K_finale_automatico <- proponi_K(diagnostica_K_finale)
+K <- kopt <- if (params$scelta_K == "automatico") {
+  K_finale_automatico
+} else as.integer(params$K_finale_manuale)
+diagnostica_K_finale$selezionato <- diagnostica_K_finale$K == K
+stopifnot(K %in% K_candidati, K0 %in% K_candidati)
+selezione_K_alpha <- data.frame(
+  passaggio = c("1. K0 su D0", "2. alpha a K0 fissato", "3. K finale ad alpha fissato"),
+  K = c(K0, K0, K), alpha = c(0, alpha_ottimo, alpha_ottimo),
+  modalita = c(params$scelta_K, params$scelta_alpha, params$scelta_K),
+  proposta_automatica = c(K0_automatico, alpha_automatico, K_finale_automatico),
+  criterio = c("Gomito: massima distanza dalla corda; verificare dendrogramma",
+    descrizione_criterio_alpha, "Gomito dell'inerzia mista; verificare dendrogramma"))
+riepilogo_selezione <- data.frame(area = params$area, Milano_nella_stima = includi_milano,
+  n_osservazioni = n, comuni_distinti = dplyr::n_distinct(DPCM_red2$LAU_Code),
+  p_variabili = length(variabili_clustering), unita_statistica = "comune unico",
+  K0 = K0, alpha_scelto = alpha_ottimo, K_finale = K, criterio_alpha = params$criterio_alpha,
+  K0_automatico = K0_automatico, alpha_automatico = alpha_automatico,
+  K_finale_automatico = K_finale_automatico,
+  modalita_K = params$scelta_K, modalita_alpha = params$scelta_alpha,
+  alpha_step = params$alpha_step, gap_minimo_a_K0 = min(curva_alpha_K0$gap_Qnorm),
+  T0_std = T0_std, T1_std = T1_std, alpha_ricalcolato_dopo_K_finale = FALSE)
+write.csv(diagnostica_K0, file.path(output_dir, "Diagnostica_K0.csv"), row.names = FALSE)
+write.csv(curva_alpha_K0, file.path(output_dir, "Curve_alpha_selezione_K0.csv"), row.names = FALSE)
+write.csv(diagnostica_K_finale, file.path(output_dir, "Diagnostica_K_finale.csv"), row.names = FALSE)
+write.csv(selezione_K_alpha, file.path(output_dir, "Passaggi_selezione.csv"), row.names = FALSE)
+write.csv(riepilogo_selezione, file.path(output_dir, "Selezione_K_alpha.csv"), row.names = FALSE)
+writeLines(c(paste("Area:", params$area), paste("Milano nella stima:", includi_milano),
+  paste("K0:", K0), paste("Alpha scelto a K0:", format(alpha_ottimo, digits = 12)),
+  paste("K finale:", K), paste("Modalita K:", params$scelta_K),
+  paste("Criterio alpha:", params$criterio_alpha), paste("Modalita alpha:", params$scelta_alpha),
+  "Sequenza: K0 su D0 -> alpha a K0 fissato -> K finale ad alpha fissato.",
+  "Il gomito automatico e una regola operativa esplicita; verificare i dendrogrammi.",
+  "Nessuna riottimizzazione di alpha dopo il passaggio 3."),
+  file.path(output_dir, "Scelta_finale.txt"))
+```
+
+```{r riepilogo-selezione, results='asis'}
+cat(sprintf("**Scelta per questo run: K finale = %d; alpha = %.6g.** K0 = %d.\n\n",
+  K, alpha_ottimo, K0))
+cat(paste("Criterio:", descrizione_criterio_alpha, "\n\n"))
+print(knitr::kable(selezione_K_alpha, digits = 6, row.names = FALSE))
+if (K != K0) cat("\n\nK finale differisce da K0: alpha rimane quello del passaggio 2.\n")
+```
+
+## Curve e dendrogrammi per verificare la scelta
+
+```{r grafici-selezione, fig.width=12, fig.height=5}
+diagnostiche_K <- dplyr::bind_rows(diagnostica_K0, diagnostica_K_finale)
+tagli_selezionati <- diagnostiche_K[diagnostiche_K$selezionato, c("fase", "K")]
+p_selezione_K <- ggplot(diagnostiche_K, aes(K, W_norm)) +
+  geom_segment(aes(x = 1, xend = max(K_candidati), y = 1, yend = 0),
+    data = tagli_selezionati, inherit.aes = FALSE,
+    linetype = 3, colour = "#9AA3A9") +
+  geom_line(colour = "#365F7C", linewidth = 0.7) +
+  geom_point(aes(shape = candidato), colour = "#365F7C", size = 1.8) +
+  geom_vline(data = tagli_selezionati, aes(xintercept = K), colour = "#B46C45", linetype = 2) +
+  facet_wrap(~ fase, ncol = 2) +
+  scale_x_continuous(breaks = seq_len(max(K_candidati))) +
+  scale_shape_manual(values = c(1, 16), guide = "none") +
+  labs(title = paste("Selezione del numero di gruppi -", params$area),
+    subtitle = "Linea tratteggiata: K usato; corda punteggiata: riferimento del gomito",
+    x = "K", y = "Inerzia interna riscalata fra gli estremi") +
+  theme_minimal(base_size = 11)
+p_selezione_K
+ggsave(file.path(output_dir, "Selezione_K_gomiti.png"), p_selezione_K,
+  width = 12, height = 5, dpi = 200, bg = "white")
+
+dati_alpha_plot <- curva_alpha_K0 %>%
+  dplyr::select(alpha, Q0norm, Q1norm, gap_Qnorm) %>%
+  pivot_longer(cols = -alpha, names_to = "statistica", values_to = "valore") %>%
+  mutate(pannello = if_else(statistica == "gap_Qnorm",
+    "Differenza assoluta: criterio da minimizzare", "Quote di inerzia spiegata normalizzate"))
+p_selezione_alpha <- ggplot(dati_alpha_plot, aes(alpha, valore, colour = statistica)) +
+  geom_line(linewidth = 0.7) + facet_wrap(~ pannello, ncol = 2, scales = "free_y") +
+  geom_vline(xintercept = alpha_ottimo, colour = "#5F6572", linetype = 2) +
+  scale_colour_manual(values = c(Q0norm = "#365F7C", Q1norm = "#B46C45", gap_Qnorm = "#527D67")) +
+  labs(title = paste("Alpha selezionato a K0 =", K0, "-", params$area),
+    subtitle = paste(descrizione_criterio_alpha,
+      "- alpha automatico =", format(alpha_automatico, digits = 6),
+      "; alpha usato =", format(alpha_ottimo, digits = 6)),
+    x = "alpha", y = NULL, colour = NULL) + theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom")
+p_selezione_alpha
+ggsave(file.path(output_dir, "Selezione_alpha_Qnorm.png"), p_selezione_alpha,
+  width = 12, height = 5, dpi = 200, bg = "white")
+```
+
+```{r dendrogrammi-selezione, fig.width=12, fig.height=6}
+disegna_dendrogrammi_selezione <- function() {
+  op <- par(mfrow = c(1, 2), mar = c(3, 4, 4, 1))
+  on.exit(par(op))
+  plot(tree_D0, labels = FALSE, hang = -1, xlab = "", ylab = "Aggregation height",
+    main = paste("D0: K0 =", K0), sub = params$area)
+  rect.hclust(tree_D0, k = K0, border = "#647B8F")
+  plot(tree_alpha_scelto, labels = FALSE, hang = -1, xlab = "", ylab = "Aggregation height",
+    main = paste("Misto: K finale =", K), sub = paste("alpha =", alpha_ottimo))
+  rect.hclust(tree_alpha_scelto, k = K, border = "#647B8F")
+}
+disegna_dendrogrammi_selezione()
+png(file.path(output_dir, "Selezione_K_dendrogrammi.png"), width = 2400, height = 1200, res = 200)
+tryCatch(disegna_dendrogrammi_selezione(), finally = dev.off())
+```
+
+# Quattro clustering e partizioni
+
+I quattro alberi usano le stesse distanze e gli stessi pesi. Alpha=0 usa
+solo l'informazione economica; alpha=1 usa solo l'informazione
+geografica. Tutti i tagli principali sono allo **stesso K finale**.
+`tree_D0`, conservato sopra come nell'originale, ha le altezze nella
+scala D0 non normalizzata; il pannello alpha=0 usa la stessa chiamata a
+due distanze degli altri tre pannelli, con peso geografico nullo.
+
+```{r quattro-fit}
+casi <- data.frame(
+  caso = c("alpha0", "alpha_ottimo", "alpha010", "alpha1"),
+  alpha = c(0, alpha_ottimo, alpha_fisso, 1),
+  stringsAsFactors = FALSE)
+casi$pannello <- c("alpha = 0",
+  paste0("alpha ", if (params$scelta_alpha == "automatico") "ottimo" else "scelto",
+          " a K0=", K0, ": ", format(alpha_ottimo, digits = 5)),
+  "alpha = 0.10", "alpha = 1")
+casi$K <- K
+casi$K0_scelta_alpha <- K0
+casi$criterio_alpha <- params$criterio_alpha
+
+alberi <- vector("list", nrow(casi))
+names(alberi) <- casi$caso
+partizioni <- data.frame(id_osservazione = seq_len(n),
+                          LAU_Code = as.character(DPCM_red2$LAU_Code))
+for (i in seq_len(nrow(casi))) {
+  # Riutilizza l'albero gia stimato al passaggio 3, quando l'alpha coincide.
+  alberi[[i]] <- if (abs(casi$alpha[i] - alpha_ottimo) < 1e-15) {
+    tree_alpha_scelto
+  } else hclustgeo(D0_std, D1_std, alpha = casi$alpha[i], wt = rep(1/n, n))
+  partizioni[[casi$caso[i]]] <- cutree(alberi[[i]], K)
+  stopifnot(length(unique(partizioni[[casi$caso[i]]])) == K)
+}
+treeD0D1 <- alberi$alpha_ottimo
+treeD0D1_alpha010 <- alberi$alpha010
+treeD0D1_alpha0 <- alberi$alpha0
+treeD0D1_alpha1 <- alberi$alpha1
+# Campi principali: K finale; campi storici _P8: realmente otto gruppi.
+DPCM_red2$D0_P_Kfinale <- partizioni$alpha0
+DPCM_red2$D0D1_P_Kfinale <- partizioni$alpha_ottimo
+DPCM_red2$D0D1_P_Kfinale_alpha010 <- partizioni$alpha010
+DPCM_red2$D0_P8 <- cutree(tree_D0, 8L)
+DPCM_red2$D0D1_P8 <- cutree(treeD0D1, 8L)
+DPCM_red2$D0D1_P8_alpha010 <- cutree(treeD0D1_alpha010, 8L)
+stopifnot(length(unique(DPCM_red2$D0_P8)) == 8L,
+  length(unique(DPCM_red2$D0D1_P8)) == 8L)
+```
+
+## Indici sugli stessi dati di stima
+
+Si conservano gli indici `cluster.stats` dell'originale, valutati su
+DMat economica. Le inerzie spiegate sono calcolate con le funzioni di
+ClustGeo. Milano eventualmente aggiunto come C(K+1) non entra in questi
+indici. Q0norm e Q1norm sono qui normalizzate sui due estremi allo
+**stesso K finale**, non sui valori a K0 se i due K differiscono. Il
+loro scarto al K finale e una diagnostica: la selezione di alpha e
+avvenuta a K0.
+
+```{r indici}
+T0 <- ClustGeo::inertdiss(D0, wt = wt)
+T1 <- ClustGeo::inertdiss(D1, wt = wt)
+indici <- vector("list", nrow(casi))
+for (i in seq_len(nrow(casi))) {
+  g <- partizioni[[casi$caso[i]]]
+  s <- fpc::cluster.stats(DMat, g)
+  q0 <- 1 - ClustGeo::withindiss(D0, g, wt = wt) / T0
+  q1 <- 1 - ClustGeo::withindiss(D1, g, wt = wt) / T1
+  indici[[i]] <- data.frame(caso = casi$caso[i], alpha = casi$alpha[i], K = K,
+    n = n, Q0 = q0, Q1 = q1,
+    ASW_economico = s$avg.silwidth, PG = s$pearsongamma,
+    WSS = s$within.cluster.ss, CH = s$ch, Dunn = s$dunn)
+}
+indici <- dplyr::bind_rows(indici)
+normalizzatore_Q0_finale <- indici$Q0[indici$caso == "alpha0"]
+normalizzatore_Q1_finale <- indici$Q1[indici$caso == "alpha1"]
+stopifnot(normalizzatore_Q0_finale > 0, normalizzatore_Q1_finale > 0)
+indici$Q0norm <- indici$Q0 / normalizzatore_Q0_finale
+indici$Q1norm <- indici$Q1 / normalizzatore_Q1_finale
+indici$gap_Qnorm <- abs(indici$Q0norm - indici$Q1norm)
+# Quando K finale=K0, controlla la coerenza con le quote native di choicealpha.
+if (K == K0) {
+  for (ii in seq_len(nrow(casi))) {
+    jj <- which(abs(curva_alpha_K0$alpha - casi$alpha[ii]) < 1e-12)
+    if (length(jj)) stopifnot(
+      abs(indici$Q0norm[ii] - curva_alpha_K0$Q0norm[jj[1L]]) < 1e-8,
+      abs(indici$Q1norm[ii] - curva_alpha_K0$Q1norm[jj[1L]]) < 1e-8)
+  }
+}
+riepilogo_selezione$gap_alpha_scelto_a_K_finale <- indici$gap_Qnorm[indici$caso == "alpha_ottimo"]
+write.csv(riepilogo_selezione, file.path(output_dir, "Selezione_K_alpha.csv"), row.names = FALSE)
+knitr::kable(indici, digits = 4, row.names = FALSE)
+```
+
+# ARI fra le quattro partizioni
+
+Si calcola l'**Adjusted Rand Index** con `mclust::adjustedRandIndex` per
+tutte le coppie: matrice simmetrica 4x4 e tabella dei sei confronti
+distinti. L'ARI vale 1 per partizioni coincidenti anche se i numeri dei
+cluster sono diversi; il valore atteso sotto il modello casuale e 0 e
+sono possibili valori negativi.
+
+I confronti usano le etichette native e gli stessi `n` comuni del fit,
+nello stesso ordine, dopo il filtro delle copie. L'eventuale gruppo
+aggiunto per mostrare Milano **non entra nel calcolo**. Questi ARI
+confrontano i quattro alpha del run corrente, quindi la stessa area e la
+stessa opzione Milano.
+
+```{r ari-partizioni}
+n_casi <- nrow(casi)
+ARI_matrice <- matrix(NA_real_, n_casi, n_casi,
+  dimnames = list(casi$caso, casi$caso))
+ARI_coppie <- list()
+for (i in seq_len(n_casi)) {
+  for (j in i:n_casi) {
+    valore_ari <- mclust::adjustedRandIndex(
+      partizioni[[casi$caso[i]]], partizioni[[casi$caso[j]]])
+    ARI_matrice[i, j] <- ARI_matrice[j, i] <- valore_ari
+    if (i < j) {
+      ARI_coppie[[length(ARI_coppie) + 1L]] <- data.frame(
+        caso_1 = casi$caso[i], alpha_1 = casi$alpha[i],
+        caso_2 = casi$caso[j], alpha_2 = casi$alpha[j],
+        K = K, K0_scelta_alpha = K0, n_osservazioni = n, ARI = valore_ari)
+    }
+  }
+}
+ARI_coppie <- dplyr::bind_rows(ARI_coppie)
+stopifnot(all(is.finite(ARI_matrice)), nrow(ARI_coppie) == choose(n_casi, 2))
+ARI_matrice_report <- ARI_matrice
+dimnames(ARI_matrice_report) <- list(casi$pannello, casi$pannello)
+knitr::kable(ARI_matrice_report, digits = 4, caption = "ARI fra i quattro alpha")
+knitr::kable(ARI_coppie, digits = 4, row.names = FALSE)
+```
+
+```{r ari-mappa-calore, fig.width=8, fig.height=7}
+ARI_long <- as.data.frame(as.table(ARI_matrice), stringsAsFactors = FALSE)
+names(ARI_long) <- c("caso_1", "caso_2", "ARI")
+etichette_ari <- setNames(stringr::str_wrap(casi$pannello, width = 19), casi$caso)
+p_ari <- ggplot(ARI_long, aes(x = caso_2, y = caso_1, fill = ARI)) +
+  geom_tile(colour = "white", linewidth = 0.8) +
+  geom_text(aes(label = sprintf("%.3f", ARI),
+                  colour = ifelse(ARI > 0.65, "white", "#243746")), size = 4) +
+  scale_colour_identity() +
+  scale_fill_gradient2(low = "#B97572", mid = "#F3F2EF", high = "#365F7C",
+                         midpoint = 0, limits = c(-1, 1), name = "ARI") +
+  scale_x_discrete(limits = casi$caso, labels = etichette_ari) +
+  scale_y_discrete(limits = rev(casi$caso), labels = etichette_ari) +
+  coord_equal() +
+  labs(title = paste("Concordanza fra partizioni -", params$area),
+       subtitle = paste("K =", K, ";", n, "osservazioni di stima"), x = NULL, y = NULL) +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid = element_blank(),
+          plot.title = element_text(face = "bold", colour = "#183746"))
+p_ari
+ggsave(file.path(output_dir, "ARI_mappa_calore.png"), p_ari,
+         width = 8, height = 7, dpi = 200, bg = "white")
+ggsave(file.path(output_dir, "ARI_mappa_calore.pdf"), p_ari,
+         width = 8, height = 7)
+```
+
+# Mappe affiancate: alpha 0, ottimo, 0.10 e 1
+
+Le etichette numeriche dei cluster sono arbitrarie. Per rendere
+confrontabili i colori, si abbina ciascuna partizione alla partizione
+dell'alpha scelto massimizzando la sovrapposizione delle osservazioni.
+Si modificano solo le etichette per il disegno: le partizioni native
+vengono salvate separatamente. La corrispondenza cromatica non implica
+che i gruppi mantengano lo stesso contenuto o lo stesso significato
+economico.
+
+La palette `sobria` riprende blu, arancio, verde, viola, rosso,
+petrolio, ocra e grigio attenuati dei grafici precedenti. `pastello` e
+un'alternativa piu chiara. La stessa corrispondenza colore-cluster viene
+usata nei quattro pannelli; Milano fuori stima resta grafite. I colori
+scelti vengono esportati.
+
+```{r abbinamento-colori}
+# Assegnazione esatta sui K gruppi (fino a 15), con programmazione dinamica.
+# Questa funzione serve solo ai colori e non modifica alcun clustering.
+abbina_colori <- function(riferimento, altra, k = 8L) {
+  tab <- table(factor(riferimento, levels = seq_len(k)),
+                factor(altra, levels = seq_len(k)))
+  ultimo <- 2^k - 1L
+  score <- rep(-Inf, ultimo + 1L)
+  score[1L] <- 0
+  precedente <- scelto <- integer(ultimo + 1L)
+  for (mask in 0:(ultimo - 1L)) {
+    if (!is.finite(score[mask + 1L])) next
+    usati <- as.integer(intToBits(mask))[seq_len(k)]
+    riga <- sum(usati) + 1L
+    for (col in which(usati == 0L)) {
+      nuovo <- bitwOr(as.integer(mask), bitwShiftL(1L, col - 1L))
+      valore <- score[mask + 1L] + tab[riga, col]
+      if (valore > score[nuovo + 1L]) {
+        score[nuovo + 1L] <- valore
+        precedente[nuovo + 1L] <- mask
+        scelto[nuovo + 1L] <- col
+      }
+    }
+  }
+  mappa <- integer(k)
+  mask <- ultimo
+  for (riga in k:1L) {
+    mappa[scelto[mask + 1L]] <- riga
+    mask <- precedente[mask + 1L]
+  }
+  list(etichette = unname(mappa[altra]), mappa = mappa)
+}
+
+partizioni_colori <- partizioni[c("id_osservazione", "LAU_Code")]
+abbinamenti <- list()
+for (i in seq_len(nrow(casi))) {
+  nm <- casi$caso[i]
+  if (nm == "alpha_ottimo") {
+    ab <- list(etichette = partizioni[[nm]], mappa = seq_len(K))
+  } else ab <- abbina_colori(partizioni$alpha_ottimo, partizioni[[nm]], K)
+  partizioni_colori[[nm]] <- ab$etichette
+  abbinamenti[[nm]] <- data.frame(caso = nm,
+    etichetta_originale = seq_len(K), etichetta_colore = ab$mappa)
+  # Verifica che la rietichettatura sia una permutazione uno a uno.
+  stopifnot(setequal(ab$mappa, seq_len(K)))
+}
+abbinamenti <- dplyr::bind_rows(abbinamenti)
+
+# Assegnazione per ID di riga: un join sul solo codice moltiplicherebbe i duplicati.
+Data_clusters <- DPCM_red2
+for (nm in casi$caso) {
+  Data_clusters[[paste0(nm, "_originale")]] <- partizioni[[nm]]
+  Data_clusters[[nm]] <- partizioni_colori[[nm]]
+}
+if (AOI == "Lombardy" && !includi_milano) {
+  Milano <- DPCM_prima_Milano %>% filter(LAU_Code == "015146")
+  stopifnot(nrow(Milano) >= 1L)
+  Milano$id_osservazione <- n + seq_len(nrow(Milano))
+  for (nm in casi$caso) {
+    Milano[[paste0(nm, "_originale")]] <- K + 1L
+    Milano[[nm]] <- K + 1L
+  }
+  Milano$D0_P_Kfinale <- Milano$D0D1_P_Kfinale <-
+    Milano$D0D1_P_Kfinale_alpha010 <- K + 1L
+  Milano$D0_P8 <- Milano$D0D1_P8 <- Milano$D0D1_P8_alpha010 <- 9L
+  Data_clusters <- dplyr::bind_rows(Data_clusters, Milano)
+}
+```
+
+```{r mappe, fig.width=13, fig.height=11}
+milano_fuori_stima <- AOI == "Lombardy" && !includi_milano
+n_colori <- K + as.integer(milano_fuori_stima)
+palette_disponibili <- list(
+  sobria = c("#3475AB", "#E18B3C", "#3E9378", "#A56DA5",
+              "#B9474E", "#60A4AD", "#A28E3D", "#5F6572",
+              "#7B899E", "#B2A181", "#7F8B62", "#977D87", "#759593", "#A37958", "#5F7992"),
+  pastello = c("#8BA9C4", "#D4AA84", "#9BB7A6", "#BAA7C4",
+                "#C99196", "#94B9BC", "#C3B984", "#A6ABB3",
+                "#A3B2C6", "#C8B99B", "#AFB995", "#C3A8B2", "#AAC5C2", "#C6AB91", "#94AFC4"))
+palette_multik <- setNames(palette_disponibili[[params$palette_mappe]], as.character(1:15))
+palette_cluster <- unname(palette_multik[as.character(seq_len(K))])
+if (milano_fuori_stima) palette_cluster <- c(palette_cluster, "#14212B")
+palette_cluster <- setNames(palette_cluster,
+                             as.character(seq_len(n_colori)))
+legenda_cluster <- paste("C", seq_len(n_colori), sep = "")
+if (milano_fuori_stima) legenda_cluster[K + 1L] <- paste0("C", K + 1L, ": Milano fuori stima")
+nomi_pannelli <- setNames(casi$pannello, casi$caso)
+
+Mappe <- Data_clusters %>%
+  dplyr::select(id_osservazione, LAU_Code, all_of(casi$caso)) %>%
+  tidyr::pivot_longer(cols = all_of(casi$caso),
+                       names_to = "caso", values_to = "Cluster") %>%
+  mutate(Pannello = factor(unname(nomi_pannelli[caso]), levels = casi$pannello),
+         Cluster = factor(Cluster, levels = seq_len(n_colori)))
+
+sottotitolo <- if (includi_milano) {
+  paste("K =", K, "complessivi; Milano incluso nella stima")
+} else paste("K =", K, "nella stima; Milano separato come C", K + 1L)
+p_mappe <- ggplot(Mappe) +
+  geom_sf(aes(fill = Cluster), linewidth = 0.045, colour = "#F5F3EF") +
+  facet_wrap(~ Pannello, ncol = 2) +
+  scale_fill_manual(values = palette_cluster, labels = legenda_cluster,
+                      drop = FALSE, name = "Cluster") +
+  labs(title = paste("Ward spaziale -", params$area),
+       subtitle = paste(sottotitolo, "-", descrizione_criterio_alpha), x = "", y = "",
+       caption = "Colori abbinati alla partizione dell'alpha scelto; etichette native conservate.") +
+  theme_void(base_size = 11) +
+  theme(legend.position = "bottom", legend.key.height = grid::unit(0.4, "cm"),
+          strip.text = element_text(face = "bold", colour = "#183746", size = 12),
+          plot.title = element_text(face = "bold", colour = "#183746", size = 15),
+          plot.subtitle = element_text(colour = "#596772"),
+          plot.caption = element_text(colour = "#687580", hjust = 0),
+          plot.margin = margin(12, 12, 12, 12)) +
+  guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+p_mappe
+
+ggsave(file.path(output_dir, "Mappe_quattro_alpha.png"), p_mappe,
+         width = 13, height = 11, dpi = 200, bg = "white")
+ggsave(file.path(output_dir, "Mappe_quattro_alpha.pdf"), p_mappe,
+         width = 13, height = 11)
+```
+
+## Dimensioni dei gruppi e collocazione di Milano
+
+La tabella seguente riguarda solo le osservazioni stimate. Milano non
+viene forzato a formare un singleton quando e incluso: la sua
+collocazione dipende dall'albero, come per ogni altra osservazione.
+
+```{r dimensioni-cluster}
+dimensioni_cluster <- dplyr::bind_rows(lapply(casi$caso, function(nm) {
+  data.frame(caso = nm, cluster = seq_len(K),
+    osservazioni = as.integer(table(factor(partizioni[[nm]], levels = seq_len(K)))))
+}))
+knitr::kable(dimensioni_cluster, row.names = FALSE)
+if (includi_milano) {
+  knitr::kable(partizioni[partizioni$LAU_Code == "015146", ], row.names = FALSE)
+}
+```
+
+# Mappe affiancate: alpha=0 e alpha ottimo, K da 2 a 15
+
+La figura contiene 28 mappe in due colonne (alpha = 0 e alpha = ottimo)
+e 14 righe, ordinate da K = 2 a K = 15. Alpha ottimo e quello
+selezionato nel run a K0: qui varia soltanto il taglio delle due
+gerarchie, senza riselezionare alpha per ciascun K. Il PDF vettoriale
+permette di ingrandire i singoli pannelli.
+
+Per rendere leggibili le divisioni successive, i colori fanno
+riferimento ai 15 rami dell'albero all'alpha ottimo. A ogni K, la
+partizione alpha=0 viene abbinata a quella dell'alpha ottimo
+massimizzando la sovrapposizione. R1...R15 sono riferimenti cromatici:
+gli ID nativi dei cluster usati nelle tabelle rimangono separati e sono
+esportati con la loro corrispondenza. Milano fuori stima resta grigio e
+non entra nei calcoli delle partizioni.
+
+```{r partizioni-multik-confronto}
+K_confronto <- 2:15
+Casi_multik <- data.frame(K = rep(K_confronto, each = 2L),
+  caso = rep(c("alpha0", "alpha_ottimo"), length(K_confronto)),
+  alpha = rep(c(0, alpha_ottimo), length(K_confronto)),
+  stringsAsFactors = FALSE)
+Casi_multik$campo <- paste0(Casi_multik$caso, "_K", Casi_multik$K)
+Casi_multik$pannello <- paste0("K = ", Casi_multik$K, " | ",
+  ifelse(Casi_multik$caso == "alpha0", "alpha = 0",
+    paste0("alpha ottimo = ", format(alpha_ottimo, digits = 6))))
+Partizioni_multik_confronto <- partizioni[c("id_osservazione", "LAU_Code")]
+Colori_multik_confronto <- Partizioni_multik_confronto
+Abbinamento_colori_multik <- Dimensioni_multik_lista <- ARI_multik_lista <- list()
+riferimento_15 <- cutree(treeD0D1, k = 15L)
+for (kk in K_confronto) {
+  g0 <- cutree(treeD0D1_alpha0, k = kk)
+  gs <- cutree(treeD0D1, k = kk)
+  rami <- vapply(seq_len(kk), function(gr) {
+    as.integer(which.max(table(factor(riferimento_15[gs == gr], levels = 1:15))))
+  }, integer(1))
+  stopifnot(!anyDuplicated(rami))
+  ab0 <- abbina_colori(gs, g0, kk)
+  for (cc in c("alpha0", "alpha_ottimo")) {
+    campo <- paste0(cc, "_K", kk)
+    gruppi <- if (cc == "alpha0") g0 else gs
+    mappa_rami <- if (cc == "alpha0") rami[ab0$mappa] else rami
+    Partizioni_multik_confronto[[campo]] <- gruppi
+    Colori_multik_confronto[[campo]] <- unname(mappa_rami[gruppi])
+    Abbinamento_colori_multik[[length(Abbinamento_colori_multik) + 1L]] <- data.frame(
+      K = kk, caso = cc, cluster_nativo = seq_len(kk), ramo_colore = mappa_rami)
+    Dimensioni_multik_lista[[length(Dimensioni_multik_lista) + 1L]] <- data.frame(
+      caso = cc, alpha = if (cc == "alpha0") 0 else alpha_ottimo, K = kk,
+      cluster = seq_len(kk),
+      n_comuni = as.integer(table(factor(gruppi, levels = seq_len(kk)))),
+      ramo_colore = mappa_rami)
+  }
+  ARI_multik_lista[[length(ARI_multik_lista) + 1L]] <- data.frame(
+    K = kk, alpha_0 = 0, alpha_ottimo = alpha_ottimo, n_comuni = n,
+    ARI = mclust::adjustedRandIndex(g0, gs))
+}
+Abbinamento_colori_multik <- bind_rows(Abbinamento_colori_multik)
+Abbinamento_colori_multik$colore_hex <- unname(palette_multik[
+  as.character(Abbinamento_colori_multik$ramo_colore)])
+Dimensioni_multik <- bind_rows(Dimensioni_multik_lista)
+ARI_multik <- bind_rows(ARI_multik_lista)
+stopifnot(nrow(Casi_multik) == 28L, all(Dimensioni_multik$n_comuni > 0))
+write.csv(Casi_multik, file.path(output_dir, "Casi_multik_K2_K15.csv"), row.names = FALSE)
+write.csv(Partizioni_multik_confronto,
+  file.path(output_dir, "Partizioni_alpha0_alphaottimo_K2_K15.csv"), row.names = FALSE)
+write.csv(Abbinamento_colori_multik,
+  file.path(output_dir, "Abbinamento_colori_K2_K15.csv"), row.names = FALSE)
+write.csv(Dimensioni_multik, file.path(output_dir, "Dimensioni_gruppi_K2_K15.csv"), row.names = FALSE)
+write.csv(ARI_multik, file.path(output_dir, "ARI_alpha0_alphaottimo_K2_K15.csv"), row.names = FALSE)
+```
+
+```{r figura-multik, echo=FALSE, out.width='100%'}
+# La tabella spaziale per 28 pannelli resta locale e non gonfia il workspace.
+local({
+  dati_mappa <- Data_clusters %>% dplyr::select(id_osservazione, LAU_Code)
+  stopifnot(all(dati_mappa$id_osservazione[seq_len(n)] == seq_len(n)))
+  n_extra <- nrow(dati_mappa) - n
+  stopifnot(n_extra == (if (milano_fuori_stima) 1L else 0L))
+  for (campo in Casi_multik$campo) {
+    dati_mappa[[campo]] <- c(Colori_multik_confronto[[campo]], rep(16L, n_extra))
+  }
+  k_pannelli_multik <- setNames(Casi_multik$K, Casi_multik$campo)
+  alpha_pannelli_multik <- setNames(Casi_multik$caso, Casi_multik$campo)
+  n_color <- 15L + as.integer(milano_fuori_stima)
+  colori <- unname(palette_multik[as.character(1:15)])
+  if (milano_fuori_stima) colori <- c(colori, "#14212B")
+  names(colori) <- as.character(seq_len(n_color))
+  legenda <- paste0("R", 1:15)
+  if (milano_fuori_stima) legenda <- c(legenda, "Milano fuori stima")
+  dati_mappa <- dati_mappa %>%
+    pivot_longer(cols = all_of(Casi_multik$campo), names_to = "campo", values_to = "ramo") %>%
+    mutate(K_riga = factor(unname(k_pannelli_multik[campo]), levels = K_confronto,
+        labels = paste0("K = ", K_confronto)),
+      Alpha_colonna = factor(unname(alpha_pannelli_multik[campo]),
+        levels = c("alpha0", "alpha_ottimo"), labels = c("alpha = 0", "alpha = ottimo")),
+      ramo = factor(ramo, levels = seq_len(n_color)))
+  p <- ggplot(dati_mappa) +
+    geom_sf(aes(fill = ramo), linewidth = 0.025, colour = "#F5F3EF") +
+    facet_grid(K_riga ~ Alpha_colonna, switch = "y") +
+    scale_fill_manual(values = colori, labels = legenda, drop = FALSE,
+      name = "Rami di riferimento a K=15") +
+    labs(title = paste("Clustering da K=2 a K=15 -", params$area),
+      subtitle = paste("Coppie alpha=0 / alpha ottimo; alpha ottimo =", format(alpha_ottimo, digits = 6)),
+      caption = "Colori riferiti all'albero alpha ottimo; ID nativi dei cluster esportati separatamente.",
+      x = "", y = "") +
+    theme_void(base_size = 10) +
+    theme(legend.position = "bottom",
+      strip.text = element_text(face = "bold", size = 10, colour = "#183746"),
+      strip.text.y.left = element_text(angle = 0),
+      strip.background = element_rect(fill = "#F0F2F3", colour = NA),
+      plot.title = element_text(face = "bold", size = 16, colour = "#183746"),
+      plot.caption = element_text(hjust = 0, colour = "#687580"),
+      plot.margin = margin(12, 12, 12, 12)) +
+    guides(fill = guide_legend(nrow = 2, byrow = TRUE))
+  ggsave(file.path(output_dir, "Mappe_alpha0_alphaottimo_K2_K15.png"),
+    p, width = 12, height = 48, dpi = 170, bg = "white")
+  ggsave(file.path(output_dir, "Mappe_alpha0_alphaottimo_K2_K15.pdf"),
+    p, width = 12, height = 48)
+})
+knitr::include_graphics(file.path(output_dir, "Mappe_alpha0_alphaottimo_K2_K15.png"))
+```
+
+# Stabilita delle partizioni a parita di alpha: ARI fra K=2...15
+
+Per ciascuno dei due alpha si confrontano tutti i tagli K=2...15 della
+stessa gerarchia. La cella alla riga k e alla colonna l riporta
+
+$$
+A^{(\alpha)}_{k,l}=\operatorname{ARI}(P_k^{\alpha},P_l^{\alpha}),
+\qquad k,l\in\{2,\ldots,15\}.
+$$
+
+Si ottengono due matrici simmetriche 14x14: una per alpha=0 e una per
+l'alpha ottimo selezionato a K0, mantenuto fisso per tutti i confronti.
+La diagonale vale 1. Gli ID numerici dei cluster non influenzano l'ARI.
+Si usano le etichette native gia calcolate per le mappe, sugli stessi n
+comuni e nello stesso ordine; Milano eventualmente fuori stima resta
+escluso.
+
+Questa e una diagnostica di **stabilita rispetto alla scelta di K, sul
+campione fissato**. Valori prossimi a 1 indicano un accordo elevato fra
+due tagli. Le celle K contro K+1 permettono di individuare le divisioni
+che cambiano maggiormente la partizione. I tagli sono annidati nella
+stessa gerarchia; la lettura tiene quindi conto anche delle numerosita
+dei gruppi. Questi confronti sono descrittivi e non aggiungono un
+criterio di selezione.
+
+```{r ari-stabilita-K}
+calcola_ARI_stabilita_K <- function(caso_alpha) {
+  campi <- paste0(caso_alpha, "_K", K_confronto)
+  stopifnot(all(campi %in% names(Partizioni_multik_confronto)),
+    nrow(Partizioni_multik_confronto) == n,
+    identical(Partizioni_multik_confronto$id_osservazione, seq_len(n)))
+  m <- length(K_confronto)
+  etichette_K <- paste0("K = ", K_confronto)
+  matrice <- matrix(NA_real_, m, m, dimnames = list(etichette_K, etichette_K))
+  for (ii in seq_len(m)) {
+    for (jj in seq_len(ii)) {
+      valore <- mclust::adjustedRandIndex(
+        Partizioni_multik_confronto[[campi[ii]]],
+        Partizioni_multik_confronto[[campi[jj]]])
+      matrice[ii, jj] <- matrice[jj, ii] <- valore
+    }
+  }
+  stopifnot(all(is.finite(matrice)),
+    max(abs(matrice - t(matrice))) < 1e-12,
+    all(abs(diag(matrice) - 1) < 1e-12),
+    all(matrice >= -1 - 1e-12 & matrice <= 1 + 1e-12))
+  matrice
+}
+ARI_stabilita_K <- setNames(lapply(c("alpha0", "alpha_ottimo"),
+  calcola_ARI_stabilita_K), c("alpha0", "alpha_ottimo"))
+ARI_stabilita_K_alpha0 <- ARI_stabilita_K$alpha0
+ARI_stabilita_K_alphaottimo <- ARI_stabilita_K$alpha_ottimo
+
+ARI_stabilita_K_long <- bind_rows(lapply(names(ARI_stabilita_K), function(cc) {
+  tab <- expand.grid(K_riga = K_confronto, K_colonna = K_confronto,
+    KEEP.OUT.ATTRS = FALSE, stringsAsFactors = FALSE)
+  # expand.grid varia prima K_riga, come l'ordine per colonne di una matrice R.
+  tab$ARI <- as.vector(ARI_stabilita_K[[cc]])
+  tab$caso <- cc
+  tab$alpha <- if (cc == "alpha0") 0 else alpha_ottimo
+  tab$n_comuni <- n
+  tab
+}))
+ARI_stabilita_K_coppie <- ARI_stabilita_K_long %>%
+  filter(K_riga < K_colonna) %>%
+  mutate(tagli_consecutivi = K_colonna == K_riga + 1L) %>%
+  arrange(caso, K_riga, K_colonna)
+stopifnot(nrow(ARI_stabilita_K_coppie) == 2L * choose(length(K_confronto), 2L))
+write.csv(data.frame(K = K_confronto, ARI_stabilita_K_alpha0, check.names = FALSE),
+  file.path(output_dir, "ARI_stabilita_K_alpha0.csv"), row.names = FALSE)
+write.csv(data.frame(K = K_confronto, ARI_stabilita_K_alphaottimo, check.names = FALSE),
+  file.path(output_dir, "ARI_stabilita_K_alphaottimo.csv"), row.names = FALSE)
+write.csv(ARI_stabilita_K_coppie,
+  file.path(output_dir, "ARI_stabilita_K_coppie.csv"), row.names = FALSE)
+```
+
+## Matrice ARI a alpha=0
+
+Le righe e le colonne sono ordinate da K=2 a K=15. Le tabelle mostrano
+tre decimali; i CSV conservano la precisione numerica dei risultati.
+
+```{r tabella-ari-stabilita-alpha0, echo=FALSE}
+tabella_ARI_stabilita <- function(matrice, didascalia) {
+  dati <- data.frame(K = K_confronto, matrice, check.names = FALSE)
+  widget <- DT::datatable(dati, rownames = FALSE, class = "stripe hover compact",
+    extensions = "Buttons", caption = didascalia,
+    options = list(dom = "Bt", buttons = list(
+      list(extend = "copy", exportOptions = list(orthogonal = "export")),
+      list(extend = "csv", exportOptions = list(orthogonal = "export")), "print"),
+      paging = FALSE, ordering = FALSE, searching = FALSE, scrollX = TRUE))
+  DT::formatRound(widget, columns = colnames(matrice), digits = 3)
+}
+tabella_ARI_stabilita_alpha0 <- tabella_ARI_stabilita(ARI_stabilita_K_alpha0,
+  "ARI tra K=2...15, alpha = 0")
+htmlwidgets::saveWidget(tabella_ARI_stabilita_alpha0,
+  file.path(output_dir, "ARI_stabilita_K_alpha0.html"), selfcontained = TRUE,
+  title = "Stabilita rispetto a K: alpha = 0")
+tabella_ARI_stabilita_alpha0
+```
+
+## Matrice ARI a alpha ottimo
+
+```{r tabella-ari-stabilita-alphaottimo, echo=FALSE}
+tabella_ARI_stabilita_alphaottimo <- tabella_ARI_stabilita(ARI_stabilita_K_alphaottimo,
+  paste0("ARI tra K=2...15, alpha ottimo = ", format(alpha_ottimo, digits = 6),
+    " (costante, selezionato a K0 = ", K0, ")"))
+htmlwidgets::saveWidget(tabella_ARI_stabilita_alphaottimo,
+  file.path(output_dir, "ARI_stabilita_K_alphaottimo.html"), selfcontained = TRUE,
+  title = "Stabilita rispetto a K: alpha ottimo")
+tabella_ARI_stabilita_alphaottimo
+```
+
+## Mappe di calore delle due matrici ARI
+
+Le due matrici condividono la stessa scala cromatica da -1 a 1. La riga
+K=2 e in alto e la colonna K=2 a sinistra in entrambi i pannelli.
+
+```{r ari-stabilita-mappe-calore, fig.width=14, fig.height=7.5}
+etichette_ARI_stabilita <- c("alpha = 0",
+  paste0("alpha ottimo = ", format(alpha_ottimo, digits = 6)))
+dati_ARI_stabilita_grafico <- ARI_stabilita_K_long %>%
+  mutate(Pannello = factor(caso, levels = c("alpha0", "alpha_ottimo"),
+    labels = etichette_ARI_stabilita))
+p_ARI_stabilita <- ggplot(dati_ARI_stabilita_grafico,
+  aes(x = factor(K_colonna, levels = K_confronto),
+    y = factor(K_riga, levels = rev(K_confronto)), fill = ARI)) +
+  geom_tile(colour = "white", linewidth = 0.35) +
+  geom_text(aes(label = sprintf("%.3f", ARI),
+    colour = ifelse(ARI > 0.65, "white", "#243746")), size = 2.5) +
+  scale_colour_identity() +
+  scale_fill_gradient2(low = "#B97572", mid = "#F3F2EF", high = "#365F7C",
+    midpoint = 0, limits = c(-1, 1), name = "ARI") +
+  facet_wrap(~ Pannello, ncol = 2) + coord_equal() +
+  labs(title = paste("Stabilita delle partizioni al variare di K -", params$area),
+    subtitle = paste(n, "comuni di stima; alpha costante in ciascuna matrice"),
+    x = "K della partizione in colonna", y = "K della partizione in riga") +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid = element_blank(), legend.position = "bottom",
+    strip.text = element_text(face = "bold", colour = "#183746"),
+    plot.title = element_text(face = "bold", colour = "#183746"))
+p_ARI_stabilita
+ggsave(file.path(output_dir, "ARI_stabilita_K_mappe_calore.png"),
+  p_ARI_stabilita, width = 14, height = 7.5, dpi = 200, bg = "white")
+ggsave(file.path(output_dir, "ARI_stabilita_K_mappe_calore.pdf"),
+  p_ARI_stabilita, width = 14, height = 7.5)
+```
+
+# Stabilita delle partizioni a parita di K: ARI fra alpha=0, 0.10, ..., 1
+
+Per ciascun K=2...15 si confrontano le partizioni ottenute con gli 11
+valori alpha=0.00, 0.10, 0.20, ..., 1.00. Riga e colonna identificano
+due valori di alpha, mentre K resta costante nella singola matrice:
+
+$$
+B^{(K)}_{a,b}=\operatorname{ARI}(P_K^a,P_K^b),
+\qquad a,b\in\{0,0.10,\ldots,1\}.
+$$
+
+Si ottengono **14 matrici simmetriche 11x11**, tutte con diagonale pari
+a 1. Le celle fra alpha consecutivi mostrano la sensibilita locale al
+parametro; le altre celle confrontano scelte piu distanti. L'ARI
+confronta le etichette native, sullo stesso campione di n comuni; Milano
+eventualmente fuori stima resta escluso.
+
+Il passo 0.10 riguarda questa diagnostica. La selezione automatica di
+alpha continua a usare alpha_step e il criterio paper_assoluto. Dati,
+trasformazioni, distanze e pesi sono quelli del run corrente.
+
+```{r partizioni-griglia-alpha-ARI}
+# Griglia descrittiva dedicata: esattamente 11 alpha, estremi inclusi.
+griglia_alpha_ARI <- (0:10) / 10
+etichette_alpha_ARI <- sprintf("%.2f", griglia_alpha_ARI)
+id_alpha_ARI <- paste0("alpha_", sprintf("%03d", as.integer(round(100 * griglia_alpha_ARI))))
+Griglia_alpha_ARI <- data.frame(alpha = griglia_alpha_ARI, id_alpha = id_alpha_ARI,
+  albero_riutilizzato = FALSE, origine_albero = NA_character_, stringsAsFactors = FALSE)
+Partizioni_alpha_ARI <- setNames(vector("list", length(griglia_alpha_ARI)), id_alpha_ARI)
+for (ia_ARI in seq_along(griglia_alpha_ARI)) {
+  aa_ARI <- griglia_alpha_ARI[ia_ARI]
+  # Un solo albero per alpha, poi tutti i tagli K=2...15.
+  # Si riusano gli alberi del confronto principale solo ad alpha identico.
+  indici_riuso_ARI_alpha <- which(casi$alpha == aa_ARI)
+  if (length(indici_riuso_ARI_alpha)) {
+    indice_riuso_ARI_alpha <- indici_riuso_ARI_alpha[1L]
+    albero_ARI_alpha <- alberi[[indice_riuso_ARI_alpha]]
+    Griglia_alpha_ARI$albero_riutilizzato[ia_ARI] <- TRUE
+    Griglia_alpha_ARI$origine_albero[ia_ARI] <- casi$caso[indice_riuso_ARI_alpha]
+  } else {
+    albero_ARI_alpha <- ClustGeo::hclustgeo(D0_std, D1_std, alpha = aa_ARI, wt = wt)
+    Griglia_alpha_ARI$origine_albero[ia_ARI] <- "Fit ClustGeo sulla griglia diagnostica"
+  }
+  tagli_ARI_alpha <- cutree(albero_ARI_alpha, k = K_confronto)
+  stopifnot(nrow(tagli_ARI_alpha) == n, ncol(tagli_ARI_alpha) == length(K_confronto),
+    identical(colnames(tagli_ARI_alpha), as.character(K_confronto)),
+    all(vapply(seq_along(K_confronto), function(ii)
+      length(unique(tagli_ARI_alpha[, ii])), integer(1)) == K_confronto))
+  Partizioni_alpha_ARI[[ia_ARI]] <- tagli_ARI_alpha
+}
+write.csv(Griglia_alpha_ARI, file.path(output_dir, "Griglia_alpha_ARI.csv"), row.names = FALSE)
+saveRDS(list(comuni = partizioni[c("id_osservazione", "LAU_Code")],
+    K = K_confronto, griglia_alpha = Griglia_alpha_ARI, partizioni = Partizioni_alpha_ARI),
+  file.path(output_dir, "Partizioni_stabilita_alpha_K2_K15.rds"))
+```
+
+```{r ari-stabilita-alpha-K-fisso}
+ARI_stabilita_alpha <- setNames(vector("list", length(K_confronto)), as.character(K_confronto))
+for (kk_ARI_alpha in K_confronto) {
+  n_alpha_ARI <- length(griglia_alpha_ARI)
+  nomi_matrice_ARI_alpha <- paste0("alpha = ", etichette_alpha_ARI)
+  matrice_ARI_alpha <- matrix(NA_real_, n_alpha_ARI, n_alpha_ARI,
+    dimnames = list(nomi_matrice_ARI_alpha, nomi_matrice_ARI_alpha))
+  for (ii_ARI_alpha in seq_len(n_alpha_ARI)) {
+    for (jj_ARI_alpha in seq_len(ii_ARI_alpha)) {
+      valore_ARI_alpha <- mclust::adjustedRandIndex(
+        Partizioni_alpha_ARI[[ii_ARI_alpha]][, as.character(kk_ARI_alpha)],
+        Partizioni_alpha_ARI[[jj_ARI_alpha]][, as.character(kk_ARI_alpha)])
+      matrice_ARI_alpha[ii_ARI_alpha, jj_ARI_alpha] <-
+        matrice_ARI_alpha[jj_ARI_alpha, ii_ARI_alpha] <- valore_ARI_alpha
+    }
+  }
+  stopifnot(all(is.finite(matrice_ARI_alpha)),
+    max(abs(matrice_ARI_alpha - t(matrice_ARI_alpha))) < 1e-12,
+    all(abs(diag(matrice_ARI_alpha) - 1) < 1e-12),
+    all(matrice_ARI_alpha >= -1 - 1e-12 & matrice_ARI_alpha <= 1 + 1e-12))
+  ARI_stabilita_alpha[[as.character(kk_ARI_alpha)]] <- matrice_ARI_alpha
+  write.csv(data.frame(alpha_riga = griglia_alpha_ARI, matrice_ARI_alpha, check.names = FALSE),
+    file.path(output_dir, paste0("ARI_stabilita_alpha_K", kk_ARI_alpha, ".csv")), row.names = FALSE)
+}
+# Coerenza con il confronto principale: stessi alpha=0/0.10/1 e stesso K finale.
+indici_riscontro_ARI_alpha <- c(1L, 2L, length(griglia_alpha_ARI))
+casi_riscontro_ARI_alpha <- c("alpha0", "alpha010", "alpha1")
+stopifnot(isTRUE(all.equal(
+  unname(ARI_stabilita_alpha[[as.character(K)]][indici_riscontro_ARI_alpha, indici_riscontro_ARI_alpha]),
+  unname(ARI_matrice[casi_riscontro_ARI_alpha, casi_riscontro_ARI_alpha]), tolerance = 1e-12)))
+
+ARI_stabilita_alpha_long <- bind_rows(lapply(K_confronto, function(kk) {
+  tab <- expand.grid(indice_riga = seq_along(griglia_alpha_ARI),
+    indice_colonna = seq_along(griglia_alpha_ARI), KEEP.OUT.ATTRS = FALSE)
+  tab$K <- kk
+  tab$alpha_riga <- griglia_alpha_ARI[tab$indice_riga]
+  tab$alpha_colonna <- griglia_alpha_ARI[tab$indice_colonna]
+  tab$ARI <- as.vector(ARI_stabilita_alpha[[as.character(kk)]])
+  tab$n_comuni <- n
+  tab
+}))
+ARI_stabilita_alpha_coppie <- ARI_stabilita_alpha_long %>%
+  filter(indice_riga < indice_colonna) %>%
+  mutate(alpha_consecutivi = indice_colonna == indice_riga + 1L) %>%
+  arrange(K, alpha_riga, alpha_colonna)
+stopifnot(nrow(ARI_stabilita_alpha_coppie) == length(K_confronto) * choose(length(griglia_alpha_ARI), 2L))
+write.csv(ARI_stabilita_alpha_coppie,
+  file.path(output_dir, "ARI_stabilita_alpha_coppie.csv"), row.names = FALSE)
+saveRDS(ARI_stabilita_alpha, file.path(output_dir, "ARI_stabilita_alpha_matrici.rds"))
+```
+
+## Matrici ARI: tabella HTML con filtro per K
+
+Il filtro sulla colonna K permette di visualizzare una matrice alla
+volta. Ogni blocco ha 11 righe, con alpha crescente; anche le 11 colonne
+ARI seguono l'ordine da 0.00 a 1.00. La paginazione iniziale mostra 11
+righe. La visualizzazione arrotonda a tre decimali; i CSV conservano la
+precisione numerica dei risultati. Ogni K ha anche un proprio file CSV.
+
+```{r tabella-ari-stabilita-alpha, echo=FALSE}
+ARI_stabilita_alpha_tabella <- bind_rows(lapply(K_confronto, function(kk) {
+  data.frame(K = kk, alpha_riga = griglia_alpha_ARI,
+    ARI_stabilita_alpha[[as.character(kk)]], check.names = FALSE)
+}))
+dati_tabella_ARI_alpha <- ARI_stabilita_alpha_tabella %>%
+  mutate(K = factor(K, levels = K_confronto),
+    alpha_riga = factor(sprintf("%.2f", alpha_riga), levels = etichette_alpha_ARI))
+tabella_ARI_stabilita_alpha <- DT::datatable(dati_tabella_ARI_alpha, rownames = FALSE,
+  filter = "top", extensions = "Buttons", class = "stripe hover compact",
+  caption = "Matrici ARI a K fisso: selezionare K; alpha=0.00, 0.10, ..., 1.00",
+  options = list(dom = "Blfrtip", buttons = list(
+    list(extend = "copy", exportOptions = list(orthogonal = "export")),
+    list(extend = "csv", exportOptions = list(orthogonal = "export")), "print"),
+    pageLength = 11, lengthMenu = c(11, 22, 55, 154), ordering = FALSE,
+    scrollX = TRUE, deferRender = TRUE))
+tabella_ARI_stabilita_alpha <- DT::formatRound(tabella_ARI_stabilita_alpha,
+  columns = colnames(ARI_stabilita_alpha[[1L]]), digits = 3)
+htmlwidgets::saveWidget(tabella_ARI_stabilita_alpha,
+  file.path(output_dir, "ARI_stabilita_alpha_matrici.html"), selfcontained = TRUE,
+  title = "Stabilita rispetto ad alpha, a K fisso")
+tabella_ARI_stabilita_alpha
+```
+
+## Mappe di calore a K fisso
+
+Un'unica figura raccoglie i 14 pannelli, ordinati per K. In ogni
+pannello alpha=0.00 e in alto e a sinistra; la scala cromatica comune va
+da -1 a 1.
+
+```{r ari-stabilita-alpha-mappe-calore, fig.width=18, fig.height=30, out.width='100%'}
+dati_ARI_alpha_grafico <- ARI_stabilita_alpha_long %>%
+  mutate(K_pannello = factor(K, levels = K_confronto,
+    labels = paste0("K = ", K_confronto)))
+p_ARI_stabilita_alpha <- ggplot(dati_ARI_alpha_grafico,
+  aes(x = factor(indice_colonna, levels = seq_along(griglia_alpha_ARI), labels = etichette_alpha_ARI),
+    y = factor(indice_riga, levels = rev(seq_along(griglia_alpha_ARI)), labels = rev(etichette_alpha_ARI)),
+    fill = ARI)) +
+  geom_tile(colour = "white", linewidth = 0.35) +
+  geom_text(aes(label = sprintf("%.3f", ARI),
+    colour = ifelse(ARI > 0.65, "white", "#243746")), size = 2.5) +
+  scale_colour_identity() +
+  scale_fill_gradient2(low = "#B97572", mid = "#F3F2EF", high = "#365F7C",
+    midpoint = 0, limits = c(-1, 1), name = "ARI") +
+  facet_wrap(~ K_pannello, ncol = 3) + coord_equal() +
+  labs(title = paste("Stabilita rispetto ad alpha, a K fisso -", params$area),
+    subtitle = paste(n, "comuni di stima; alpha=0.00, 0.10, ..., 1.00"),
+    x = "Alpha della partizione in colonna", y = "Alpha della partizione in riga") +
+  theme_minimal(base_size = 10) +
+  theme(panel.grid = element_blank(), legend.position = "bottom",
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    strip.text = element_text(face = "bold", colour = "#183746"),
+    plot.title = element_text(face = "bold", colour = "#183746"))
+p_ARI_stabilita_alpha
+ggsave(file.path(output_dir, "ARI_stabilita_alpha_mappe_calore.png"),
+  p_ARI_stabilita_alpha, width = 18, height = 30, dpi = 160, bg = "white")
+ggsave(file.path(output_dir, "ARI_stabilita_alpha_mappe_calore.pdf"),
+  p_ARI_stabilita_alpha, width = 18, height = 30)
+```
+
+# Profili dei gruppi: tabelle HTML interattive
+
+Le tabelle riguardano entrambe le partizioni della figura, per tutti i
+K=2...15. Ogni comune ha lo stesso peso. Milano eventualmente fuori
+stima non entra nei profili dei cluster stimati.
+
+Le 12 variabili sono descritte su tre scale: valori originali, densita
+per km2 e valori densita/mediana/IQR effettivamente entrati in D0. La
+terza scala e letta direttamente da Xmat_nogeo; nessuna trasformazione
+descrittiva modifica i fit. I cluster nelle tabelle hanno gli ID nativi
+C1...CK, mentre R1...R15 nella figura sono riferimenti cromatici.
+
+Si riportano media e mediana; deviazione standard e varianza campionarie
+(denominatore n-1), quartili, IQR, MAD non riscalata, minimo e massimo.
+Asimmetria e curtosi sono le versioni corrette di Fisher-Pearson (type=2
+nelle definizioni di e1071); la curtosi e espressa come **eccesso**, con
+riferimento normale pari a zero.
+
+Ponendo m_r = mean((x-mean(x))\^r), g1=m3/m2\^(3/2) e g2=m4/m2\^2-3:
+
+$$
+G_1=\frac{\sqrt{n(n-1)}}{n-2}g_1,\qquad
+G_2=\frac{n-1}{(n-2)(n-3)}[(n+1)g_2+6].
+$$
+
+Si usano solo valori finiti, riportando separatamente mancanti e
+infiniti. Deviazione standard/varianza richiedono almeno 2 valori, G1
+almeno 3 e G2 almeno 4; asimmetria e curtosi non sono definite per
+gruppi costanti. In questi casi si salva NA, senza sostituirlo con zero.
+
+```{r statistiche-profili-multik}
+statistiche_gruppo <- function(x) {
+  tot <- length(x)
+  mancanti <- sum(is.na(x))
+  infiniti <- sum(is.infinite(x))
+  y <- x[is.finite(x)]
+  nn <- length(y)
+  if (!nn) return(data.frame(n_totale = tot, n_validi = 0L,
+    n_mancanti = mancanti, n_infiniti = infiniti,
+    media = NA_real_, mediana = NA_real_, sd = NA_real_, varianza = NA_real_,
+    q25 = NA_real_, q75 = NA_real_, IQR = NA_real_, MAD = NA_real_,
+    minimo = NA_real_, massimo = NA_real_, asimmetria = NA_real_, curtosi_eccesso = NA_real_))
+  mu <- mean(y)
+  qq <- quantile(y, c(0.25, 0.50, 0.75), names = FALSE, type = 7)
+  s <- if (nn >= 2L) stats::sd(y) else NA_real_
+  G1 <- G2 <- NA_real_
+  if (nn >= 3L && is.finite(s) && s > 0) {
+    z <- (y - mu) / s
+    G1 <- nn / ((nn - 1) * (nn - 2)) * sum(z^3)
+    if (nn >= 4L) G2 <- nn * (nn + 1) / ((nn - 1) * (nn - 2) * (nn - 3)) *
+      sum(z^4) - 3 * (nn - 1)^2 / ((nn - 2) * (nn - 3))
+  }
+  data.frame(n_totale = tot, n_validi = nn, n_mancanti = mancanti, n_infiniti = infiniti,
+    media = mu, mediana = qq[2L], sd = s, varianza = s^2,
+    q25 = qq[1L], q75 = qq[3L], IQR = qq[3L] - qq[1L],
+    MAD = stats::mad(y, center = qq[2L], constant = 1),
+    minimo = min(y), massimo = max(y), asimmetria = G1, curtosi_eccesso = G2)
+}
+# Riscontri analitici indipendenti: vettore simmetrico e casi non definiti.
+riscontro_momenti <- statistiche_gruppo(c(-2, -1, 0, 1, 2))
+stopifnot(abs(riscontro_momenti$asimmetria) < 1e-12,
+  abs(riscontro_momenti$curtosi_eccesso + 1.2) < 1e-12,
+  is.na(statistiche_gruppo(5)$sd),
+  is.na(statistiche_gruppo(c(1, 1, 1, 1))$curtosi_eccesso),
+  statistiche_gruppo(c(NA_real_, Inf))$n_validi == 0L)
+
+stopifnot(all(is.finite(DPCM_red2$Area_km2)), all(DPCM_red2$Area_km2 > 0))
+dati_grezzi_profili <- sf::st_drop_geometry(DPCM_red2)[variabili_clustering]
+dati_densita_profili <- as.data.frame(lapply(dati_grezzi_profili,
+  function(x) x / DPCM_red2$Area_km2))
+scale_profili <- list(Grezza = dati_grezzi_profili, Densita_km2 = dati_densita_profili,
+  Densita_mediana_IQR = as.data.frame(Xmat_nogeo))
+stopifnot(all(vapply(scale_profili, function(x)
+  identical(names(x), variabili_clustering), logical(1))))
+risultati_profili <- vector("list", length(scale_profili) * sum(Casi_multik$K) *
+  length(variabili_clustering))
+pos_profilo <- 0L
+for (scala_nome in names(scale_profili)) {
+  dati_scala <- scale_profili[[scala_nome]]
+  for (ii in seq_len(nrow(Casi_multik))) {
+    gruppi <- Partizioni_multik_confronto[[Casi_multik$campo[ii]]]
+    indici_gruppi <- split(seq_len(n), factor(gruppi, levels = seq_len(Casi_multik$K[ii])))
+    for (gr in seq_along(indici_gruppi)) {
+      righe_gr <- indici_gruppi[[gr]]
+      for (vv in variabili_clustering) {
+        pos_profilo <- pos_profilo + 1L
+        risultati_profili[[pos_profilo]] <- cbind(data.frame(
+          caso = Casi_multik$caso[ii], alpha = Casi_multik$alpha[ii],
+          K = Casi_multik$K[ii], cluster = gr, scala = scala_nome, variabile = vv,
+          n_comuni_gruppo = length(righe_gr), stringsAsFactors = FALSE),
+          statistiche_gruppo(dati_scala[[vv]][righe_gr]))
+      }
+    }
+  }
+}
+stopifnot(pos_profilo == length(risultati_profili))
+Profili_gruppi_multik <- bind_rows(risultati_profili)
+rm(risultati_profili)
+stopifnot(all(Profili_gruppi_multik$n_totale == Profili_gruppi_multik$n_comuni_gruppo))
+write.csv(Profili_gruppi_multik, file.path(output_dir, "Profili_gruppi_K2_K15.csv"), row.names = FALSE)
+saveRDS(Profili_gruppi_multik, file.path(output_dir, "Profili_gruppi_K2_K15.rds"))
+```
+
+## Numerosita dei gruppi
+
+I filtri in testa alle colonne permettono di selezionare caso, K e
+gruppo; ricerca, ordinamento e pulsanti di esportazione funzionano nel
+browser.
+
+```{r tabella-dimensioni-multik, echo=FALSE}
+dimensioni_html <- Dimensioni_multik %>%
+  mutate(caso = factor(caso, levels = c("alpha0", "alpha_ottimo")),
+    K = factor(K, levels = K_confronto),
+    cluster = factor(cluster, levels = 1:15))
+tabella_dimensioni_multik <- DT::datatable(dimensioni_html, rownames = FALSE,
+  filter = "top", extensions = "Buttons", class = "stripe hover compact",
+  caption = "Numerosita dei cluster: alpha=0 e alpha ottimo, K=2...15",
+  options = list(dom = "Blfrtip", buttons = c("copy", "csv", "print"),
+    pageLength = 15, lengthMenu = c(15, 30, 60, 120), scrollX = TRUE, order = list()))
+htmlwidgets::saveWidget(tabella_dimensioni_multik,
+  file.path(output_dir, "Dimensioni_gruppi_interattive.html"), selfcontained = TRUE,
+  title = "Numerosita dei gruppi K=2...15")
+tabella_dimensioni_multik
+```
+
+## Centralita, variabilita, asimmetria e curtosi
+
+Selezionare la scala e la variabile per leggere il profilo economico del
+gruppo. Le celle vuote corrispondono a NA; i conteggi dei valori validi
+chiariscono se gli indici di forma sono stimabili. Il CSV conserva tutta
+la precisione numerica nel file Profili_gruppi_K2_K15.csv, mentre la
+tabella arrotonda soltanto la visualizzazione. Le asimmetrie e le
+curtosi delle scale densita e densita/IQR coincidono, salvo
+arrotondamenti, perche la seconda si ottiene dalla prima con una
+trasformazione affine positiva.
+
+```{r tabella-profili-multik, echo=FALSE}
+profili_html <- Profili_gruppi_multik %>%
+  mutate(caso = factor(caso, levels = c("alpha0", "alpha_ottimo")),
+    K = factor(K, levels = K_confronto), cluster = factor(cluster, levels = 1:15),
+    scala = factor(scala, levels = names(scale_profili)),
+    variabile = factor(variabile, levels = variabili_clustering))
+tabella_profili_multik <- DT::datatable(profili_html, rownames = FALSE,
+  filter = "top", extensions = "Buttons", class = "stripe hover compact",
+  caption = "Profili dei gruppi: 12 variabili, due alpha e tre scale",
+  options = list(dom = "Blfrtip", buttons = list(
+    list(extend = "copy", exportOptions = list(orthogonal = "export")),
+    list(extend = "csv", exportOptions = list(orthogonal = "export")), "print"),
+    pageLength = 24, lengthMenu = c(12, 24, 48, 96), scrollX = TRUE,
+    deferRender = TRUE, order = list()))
+tabella_profili_multik <- DT::formatRound(tabella_profili_multik,
+  columns = c("media", "mediana", "sd", "varianza", "q25", "q75", "IQR", "MAD",
+    "minimo", "massimo", "asimmetria", "curtosi_eccesso"), digits = 4)
+htmlwidgets::saveWidget(tabella_profili_multik,
+  file.path(output_dir, "Profili_gruppi_interattivi.html"), selfcontained = TRUE,
+  title = "Profili dei gruppi K=2...15")
+tabella_profili_multik
+```
+
+# Output dello script originale
+
+Questa sezione ripristina anche le analisi che nella prima versione
+erano state omesse: variabili e correlazioni, matrici e distanze medie,
+dendrogrammi, diagnostiche K=2...15, curve per K=1...10, mappe K=3/8/15
+e profili dei gruppi. **Il confronto principale usa il K finale
+selezionato nei tre passaggi**. Le diagnostiche storiche non lo
+sovrascrivono. I tagli con nome \_P8 e i file con nome k8 restano tagli
+a otto gruppi, all'alpha del passaggio 2. Le formule del pretrattamento
+rimangono quelle originali; la selezione delle 12 variabili e il filtro
+delle copie comunali sono le modifiche ora richieste.
+
+I nomi dei dodici PNG dell'allegato sono conservati nella cartella del
+run. `DoubleNormVariablesD0_Lombardy.png` e un nome storico: titolo e
+dati indicano comunque l'area selezionata. Il salvataggio finale
+aggiunge anche il workspace `Res_national_11082024.RData`, con gli
+oggetti effettivamente calcolati nel run.
+
+Le matrici delle distanze vengono visualizzate integralmente, senza
+campionamento. Questi grafici e le diagnostiche NbClust possono essere
+onerosi nel caso nazionale. Se una diagnostica produce un errore, questo
+viene registrato: gli altri output proseguono e l'indice finale segnala
+gli output non generati. Un errore non viene sostituito da un risultato
+numerico.
+
+```{r supporto-output-originali}
+errori_output_originali <- list()
+tenta_output_originale <- function(nome, codice) {
+  tryCatch(force(codice), error = function(e) {
+    errori_output_originali[[length(errori_output_originali) + 1L]] <<-
+      data.frame(operazione = nome, messaggio = conditionMessage(e))
+    message("Output originale non completato [", nome, "]: ", conditionMessage(e))
+    NULL
+  })
+}
+salva_plot_originale <- function(p, file, width = 1800, height = 1200, res = 150) {
+  ggplot2::ggsave(file.path(output_dir, file), plot = p,
+    width = width / res, height = height / res, units = "in", dpi = res, bg = "white")
+  invisible(p)
+}
+salva_base_originale <- function(file, disegna, width = 1800, height = 1200, res = 150) {
+  grDevices::png(file.path(output_dir, file), width = width, height = height, res = res)
+  on.exit(grDevices::dev.off(), add = TRUE)
+  disegna()
+  invisible(file)
+}
+tema_originale <- theme_bw(base_size = 11) +
+  theme(plot.title = element_text(face = "bold", colour = "#183746"),
+          plot.subtitle = element_text(colour = "#596772"),
+          legend.position = "bottom")
+colori_continui <- c("#EDF2F3", "#8FB4C1", "#2D607A")
+
+# Definizione originale, conservata per completezza; non interviene nel Ward.
+kmpp <- function(X, k) {
+  n <- nrow(X)
+  C <- numeric(k)
+  C[1] <- sample(1:n, 1)
+  for (i in 2:k) {
+    dm <- distmat(X, X[C, ])
+    pr <- apply(dm, 1, min); pr[C] <- 0
+    C[i] <- sample(1:n, 1, prob = pr)
+  }
+  kmeans(X, X[C, ], nstart=50)
+}
+if (exists("NbClust_mod", mode = "function")) NbClust_mod <- get("NbClust_mod")
+```
+
+## Variabili standardizzate e correlazioni
+
+Si ricostruisce una copia spaziale di CData associando le geometrie per
+posizione, senza join sui codici ripetuti. CData e le matrici del
+clustering restano quelle gia calcolate. La correlazione e il suo
+`value_std` conservano le formule dell'originale; cambiano solo i colori
+dei grafici.
+
+```{r variabili-correlazioni-originali, results='hide'}
+variabili_sei <- c("Local_Units_Industry_Suspended", "Value_Added_Industry_Suspended",
+  "Employed_Industry_Suspended", "Local_Units_Services_Suspended",
+  "Value_Added_Services_Suspended", "Employed_Services_Suspended")
+etichette_sei <- c("Industry: local units suspended", "Industry: value added of local units suspended",
+  "Industry: employed persons suspended", "Services: local units suspended",
+  "Services: value added of local units suspended", "Services: employed persons suspended")
+CData_sf_originale <- sf::st_sf(CData, geometry = sf::st_geometry(DPCM_red2))
+
+p_double <- tenta_output_originale("DoubleNormVariablesD0_Lombardy.png", {
+  Data_plot <- CData_sf_originale %>%
+    pivot_longer(cols = all_of(variabili_sei), names_to = "Vars", values_to = "Values") %>%
+    mutate(Vars = factor(Vars, levels = variabili_sei, labels = etichette_sei, ordered = TRUE))
+  q <- quantile(Data_plot$Values, probs = seq(0.1, 1, by = 0.03), na.rm = TRUE)
+  # Gli eventuali break duplicati sono riuniti soltanto nella legenda.
+  q_breaks <- sort(unique(round(unname(q), 2)))
+  if (length(q_breaks) < 2L) stop("Break insufficienti per la scala cromatica delle variabili.")
+  p_double <- ggplot(Data_plot) + geom_sf(aes(fill = Values), colour = NA) +
+    scale_fill_stepsn(colours = colorRampPalette(colori_continui)(length(q_breaks)),
+      breaks = q_breaks, limits = range(q_breaks),
+      values = scales::rescale(q_breaks, from = range(q_breaks))) +
+    facet_wrap(~ Vars, nrow = 2, ncol = 3) +
+    labs(title = paste("Double-normalized DPCM variables -", params$area),
+      subtitle = "Densita per km2, poi mediana e IQR: valori originali di CData",
+      x = "", y = "", fill = "Valore") + tema_originale
+  salva_plot_originale(p_double, "DoubleNormVariablesD0_Lombardy.png")
+  p_double
+})
+
+p_corr <- tenta_output_originale("CorrMat.png", {
+  corr <- CData[, -c(1:6)] %>% sf::st_drop_geometry() %>% cor() %>%
+    reshape2::melt(na.rm = TRUE) %>% rename(Reg1 = Var1, Reg2 = Var2, Corr2021 = value)
+  corrmat <- corr %>% pivot_longer(cols = 3:last_col()) %>%
+    group_by(name) %>%
+    mutate(value_std = scale(x = value, center = TRUE, scale = TRUE)) %>% ungroup()
+  p_corr <- ggplot(corrmat, aes(x = Reg2, y = Reg1, fill = as.numeric(value_std))) +
+    geom_tile(colour = "white") + coord_fixed() +
+    geom_text(aes(label = round(value, 2)), colour = "#263C49", size = 2.6) +
+    scale_fill_gradient2(low = "#497D9A", mid = "#F2F1EE", high = "#B56F6D", name = "Measure") +
+    labs(title = "Linear correlation among DPCM-related variables", x = NULL, y = NULL) +
+    theme_minimal(base_size = 10) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1), panel.grid = element_blank())
+  salva_plot_originale(p_corr, "CorrMat.png", 2400, 2000, 150)
+  write.csv(corr, file.path(output_dir, "Correlazioni.csv"), row.names = FALSE)
+  write.csv(corrmat, file.path(output_dir, "Correlazioni_grafico.csv"), row.names = FALSE)
+  p_corr
+})
+```
+
+## Matrici e mappe delle distanze
+
+```{r matrici-distanze-originali, results='hide'}
+f1 <- tenta_output_originale("D0_mat.png", {
+  f1 <- fviz_dist(DMat, gradient = list(low = "white", mid = "grey", high = "black"),
+                    show_labels = FALSE)
+  salva_plot_originale(f1, "D0_mat.png", 2400, 2000, 150)
+  f1
+})
+f2 <- tenta_output_originale("D1_mat.png", {
+  f2 <- fviz_dist(DMat_geo, gradient = list(low = "white", mid = "grey", high = "black"),
+                    show_labels = FALSE)
+  salva_plot_originale(f2, "D1_mat.png", 2400, 2000, 150)
+  f2
+})
+p_avg0 <- tenta_output_originale("AvgDist_D0.png", {
+  p_avg0 <- ggplot(DPCM_red2) + geom_sf(aes(fill = AvgDist_D0), colour = NA) +
+    scale_fill_gradientn(colours = colori_continui, name = "Eucl. Dist.") +
+    labs(title = paste("Average distance on DPCM variables -", params$area),
+      subtitle = sottotitolo, x = "", y = "") + tema_originale
+  salva_plot_originale(p_avg0, "AvgDist_D0.png")
+  p_avg0
+})
+p_avg1 <- tenta_output_originale("AvgDist_D1.png", {
+  p_avg1 <- ggplot(DPCM_red2) + geom_sf(aes(fill = AvgDist_D1), colour = NA) +
+    scale_fill_gradientn(colours = colori_continui, name = "Metri") +
+    labs(title = paste("Average geographical distance -", params$area),
+      subtitle = "Geodetica WGS84 fra i centroidi del clustering", x = "", y = "") + tema_originale
+  salva_plot_originale(p_avg1, "AvgDist_D1.png")
+  p_avg1
+})
+write.csv(sf::st_drop_geometry(DPCM_red2)[c("id_osservazione", "LAU_Code", "AvgDist_D0", "AvgDist_D1")],
+  file.path(output_dir, "Distanze_medie.csv"), row.names = FALSE)
+```
+
+## Dendrogrammi e diagnostiche del numero di gruppi
+
+Le chiamate ai cinque indici NbClust economici e al NbClust geografico
+sono quelle dell'allegato, comprese le diverse distanze D0/D0_std e il
+metodo `ward.D` per la diagnostica geografica. Non sostituiscono il Ward
+ClustGeo del confronto principale. Il seme del ciclo degli indici rimane
+12345. Il NbClust storico su Xmat_geo resta una diagnostica euclidea
+delle coordinate, esplicitamente separata dalla D1 geodetica usata in
+tutti i fit principali. Si aggiunge una diagnostica K=2...15 sul vero
+albero alpha=1 e sulla D1 geodetica normalizzata, per evitare di
+confondere le due analisi.
+
+```{r diagnostiche-originali, results='hide'}
+ind_sil <- tenta_output_originale("NbClust_silhouette", NbClust(data=Xmat_nogeo,
+  diss=as.dist(D0), distance=NULL, min.nc=2, max.nc=15, method="ward.D2", index="silhouette"))
+ind_ch <- tenta_output_originale("NbClust_ch", NbClust(data=Xmat_nogeo,
+  diss=as.dist(D0_std), distance=NULL, min.nc=2, max.nc=15, method="ward.D2", index="ch"))
+ind_dunn <- tenta_output_originale("NbClust_dunn", NbClust(data=Xmat_nogeo,
+  diss=as.dist(D0_std), distance=NULL, min.nc=2, max.nc=15, method="ward.D2", index="dunn"))
+ind_mc <- tenta_output_originale("NbClust_mcclain", NbClust(data=Xmat_nogeo,
+  diss=as.dist(D0_std), distance=NULL, min.nc=2, max.nc=15, method="ward.D2", index="mcclain"))
+ind_c <- tenta_output_originale("NbClust_cindex", NbClust(data=Xmat_nogeo,
+  diss=as.dist(D0_std), distance=NULL, min.nc=2, max.nc=15, method="ward.D2", index="cindex"))
+NbClust_economico <- list(silhouette=ind_sil, ch=ind_ch, dunn=ind_dunn, mcclain=ind_mc, cindex=ind_c)
+saveRDS(NbClust_economico, file.path(output_dir, "NbClust_economico.rds"))
+NbClust_indici <- dplyr::bind_rows(lapply(names(NbClust_economico), function(nm) {
+  obj <- NbClust_economico[[nm]]
+  if (is.null(obj)) return(NULL)
+  m <- as.matrix(obj$All.index)
+  data.frame(indice = nm, K = 2:15, valore = as.numeric(m[, 1L]))
+}))
+write.csv(NbClust_indici, file.path(output_dir, "NbClust_economico_indici.csv"), row.names = FALSE)
+NbClust_raccomandazioni <- dplyr::bind_rows(lapply(names(NbClust_economico), function(nm) {
+  obj <- NbClust_economico[[nm]]
+  if (is.null(obj)) return(NULL)
+  valori_best <- as.numeric(obj$Best.nc)
+  data.frame(indice = nm, K_suggerito = valori_best[1L], valore_indice = valori_best[2L])
+}))
+write.csv(NbClust_raccomandazioni, file.path(output_dir, "NbClust_economico_raccomandazioni.csv"), row.names = FALSE)
+
+clustering <- list()
+clust <- seq(from = 2, to = 15)
+indexes <- matrix(NA_real_, length(clust), 5,
+  dimnames = list(paste0("cl = ", clust), c("ASW", "PG", "WSS", "CH", "Dunn")))
+set.seed(12345)
+for (cl in seq_along(clust)) {
+  clustering[[cl]] <- cutree(tree_D0, clust[cl])
+  stats <- tenta_output_originale(paste0("cluster.stats_K", clust[cl]),
+    fpc::cluster.stats(DMat, clustering[[cl]]))
+  if (!is.null(stats)) indexes[cl, ] <- c(stats$avg.silwidth, stats$pearsongamma,
+    stats$within.cluster.ss, stats$ch, stats$dunn)
+}
+write.csv(data.frame(K = clust, indexes), file.path(output_dir, "Indici_K2_K15.csv"), row.names = FALSE)
+Indici_geodetici <- dplyr::bind_rows(lapply(clust, function(kk) {
+  g_geo <- cutree(treeD0D1_alpha1, kk)
+  ss_geo <- fpc::cluster.stats(D1_std, g_geo)
+  data.frame(K = kk, ASW = ss_geo$avg.silwidth, PG = ss_geo$pearsongamma,
+    WSS = ss_geo$within.cluster.ss, Dunn = ss_geo$dunn,
+    Q1 = 1 - ClustGeo::withindiss(D1_std, g_geo, wt = wt) / T1_std)
+}))
+write.csv(Indici_geodetici, file.path(output_dir, "Indici_geodetici_K2_K15.csv"), row.names = FALSE)
+posizioni_gomito <- lapply(seq_len(ncol(indexes)), function(j) which.max(abs(diff(indexes[, j]))))
+gomiti_originali <- dplyr::bind_rows(lapply(seq_len(ncol(indexes)), function(j) {
+  pos <- posizioni_gomito[[j]]
+  data.frame(indice = colnames(indexes)[j],
+    posizione_diff = if (length(pos)) pos else NA_integer_,
+    K_iniziale = if (length(pos)) clust[pos] else NA_integer_,
+    K_finale = if (length(pos)) clust[pos + 1L] else NA_integer_)
+}))
+write.csv(gomiti_originali, file.path(output_dir, "Gomiti_indici_originali.csv"), row.names = FALSE)
+tenta_output_originale("Indici_K2_K15.png", salva_base_originale("Indici_K2_K15.png", function() {
+  par(mfrow = c(2, 3), mar = c(4, 4, 3, 1))
+  for (j in seq_len(ncol(indexes))) plot(clust, indexes[, j], type = "b", pch = 16,
+    col = "#3475AB", xlab = "K", ylab = colnames(indexes)[j], main = colnames(indexes)[j])
+}))
+
+disegna_dendrogramma <- function(albero, alpha_testo, numero_gruppi = K) {
+  par(mar = c(3, 4, 4, 1))
+  plot(albero, hang = -1, labels = FALSE, xlab = "", ylab = "Aggregation height",
+    main = paste("Ward -", params$area), sub = paste("K =", numero_gruppi, ";", alpha_testo))
+  gruppi <- cutree(albero, numero_gruppi)
+  ordine <- unique(gruppi[albero$order])
+  rect.hclust(albero, k = numero_gruppi, border = unname(palette_multik[as.character(ordine)]))
+  legend("topright", legend = paste0("C", seq_len(numero_gruppi)),
+    fill = unname(palette_multik[as.character(seq_len(numero_gruppi))]), border = NA, bty = "n", cex = 0.7)
+}
+tenta_output_originale("Dendrogram_D0.png", salva_base_originale("Dendrogram_D0.png",
+  function() disegna_dendrogramma(tree_D0, "D0 non normalizzata; solo variabili economiche")))
+tenta_output_originale("Dendrogram.png", salva_base_originale("Dendrogram.png",
+  function() disegna_dendrogramma(treeD0D1, paste("alpha =", alpha_ottimo))))
+tenta_output_originale("Dendrogram_K3_originale.png", salva_base_originale("Dendrogram_K3_originale.png",
+  function() disegna_dendrogramma(treeD0D1, paste("alpha =", alpha_ottimo), numero_gruppi = 3L)))
+for (ii in seq_len(nrow(casi))) {
+  nome_dendro <- paste0("Dendrogram_", casi$caso[ii], ".png")
+  tenta_output_originale(nome_dendro, salva_base_originale(nome_dendro,
+    function() disegna_dendrogramma(alberi[[ii]], paste("alpha =", casi$alpha[ii]))))
+}
+```
+
+## Curve di alpha per gli altri K e diagnostica geografica
+
+`cr8` resta una curva realmente calcolata a K=8, con `alpha_step`. Se
+K0=8 riutilizza la curva di selezione; altrimenti viene stimata
+separatamente. Per gli altri K si ripristinano le griglie specifiche
+dell'allegato: K=1 e K=3 da 0 a 0.1 con passo 0.01; gli altri da 0 a 1
+con passo 0.1. Queste curve sono diagnostiche e non modificano K0, K
+finale o l'alpha scelto. Per K=1 l'inerzia spiegata e zero e le quote
+normalizzate non sono definite.
+
+```{r curve-altri-k-originali, results='hide'}
+Estim_alpha <- TRUE
+test <- FALSE
+curve_per_K <- setNames(vector("list", 10L), paste0("cr", 1:10))
+for (k_diag in 1:10) {
+  nm <- paste0("cr", k_diag)
+  if (k_diag == 8L) {
+    curva <- if (K0 == 8L) cr_K0 else tenta_output_originale(nm,
+      choicealpha(D0_std, D1_std, range.alpha = range_alpha, K = 8L, wt = wt, graph = FALSE))
+  } else {
+    griglia_diag <- if (k_diag %in% c(1L, 3L)) seq(0, 0.1, 0.01) else seq(0, 1, 0.1)
+    curva <- tenta_output_originale(nm,
+      choicealpha(D0_std, D1_std, range.alpha = griglia_diag, K = k_diag, graph = FALSE))
+  }
+  curve_per_K[nm] <- list(curva)
+  assign(nm, curva, envir = knitr::knit_global())
+  if (is.null(curva)) next
+  tab_curva <- data.frame(K = k_diag, alpha = curva$range.alpha, Q0 = curva$Q[, 1],
+    Q1 = curva$Q[, 2], Q0norm = curva$Qnorm[, 1], Q1norm = curva$Qnorm[, 2])
+  assign(paste0(nm, "_Q0"), cbind(curva$Q[, 1], curva$Qnorm[, 1]), envir = knitr::knit_global())
+  write.csv(tab_curva, file.path(output_dir, paste0("ChoiceAlpha_K", k_diag, ".csv")), row.names = FALSE)
+  file_curva <- paste0("ChoiceAlpha_K", k_diag, ".png")
+  tenta_output_originale(file_curva, salva_base_originale(file_curva, function() {
+    par(mfrow = c(1, 2), mar = c(4, 4, 3, 1))
+    matplot(curva$range.alpha, curva$Q, type = "l", lty = 1:2,
+      col = c("#3475AB", "#B9474E"), ylim = c(0, 1), xlab = "alpha", ylab = "Q",
+      main = paste("K =", k_diag, "- inerzia spiegata"))
+    legend("bottomleft", c("Q0", "Q1"), lty = 1:2, col = c("#3475AB", "#B9474E"), bty = "n")
+    if (any(is.finite(curva$Qnorm))) {
+      matplot(curva$range.alpha, curva$Qnorm, type = "l", lty = 1:2,
+        col = c("#3475AB", "#B9474E"), xlab = "alpha", ylab = "Qnorm",
+        main = paste("K =", k_diag, "- inerzia normalizzata"))
+    } else { plot.new(); title(main = paste("K =", k_diag)); text(0.5, 0.5, "Qnorm non definita per K=1") }
+  }, width = 2000, height = 900))
+}
+cr8_out <- if (is.null(cr8)) data.frame() else tabella_choicealpha(cr8, 8L)
+cr_out <- t(vapply(curve_per_K, function(x) if (is.null(x)) c(NA_real_, NA_real_)
+  else c(x$Q[1, 1], x$Qnorm[1, 1]), numeric(2)))
+colnames(cr_out) <- c("Q0_alpha0", "Q0norm_alpha0")
+diff_cr_out <- diff(cr_out)
+write.csv(data.frame(K = 1:10, cr_out), file.path(output_dir, "Cr_out_originale.csv"), row.names = FALSE)
+write.csv(diff_cr_out, file.path(output_dir, "Differenze_cr_out_originale.csv"))
+if (!is.null(cr2)) {
+  differenza_Qnorm_K2 <- data.frame(alpha = cr2$range.alpha,
+    differenza = cr2$Qnorm[, 2] - cr2$Qnorm[, 1])
+  write.csv(differenza_Qnorm_K2, file.path(output_dir, "Differenza_Qnorm_K2.csv"), row.names = FALSE)
+  tenta_output_originale("Differenza_Qnorm_K2.png", salva_base_originale("Differenza_Qnorm_K2.png", function() {
+    plot(differenza_Qnorm_K2$differenza, pch = 16, col = "#3475AB",
+      xlab = "Indice della griglia", ylab = "Q1norm - Q0norm", main = "K = 2")
+  }))
+}
+
+Cl_D0 <- tenta_output_originale("NbClust_geografia", NbClust(data = Xmat_geo,
+  method = "ward.D", distance = "euclidean"))
+saveRDS(Cl_D0, file.path(output_dir, "NbClust_geografia.rds"))
+if (!is.null(Cl_D0)) {
+  write.csv(Cl_D0$All.index, file.path(output_dir, "NbClust_geografia_indici.csv"))
+  write.csv(Cl_D0$Best.nc, file.path(output_dir, "NbClust_geografia_raccomandazioni.csv"))
+  tenta_output_originale("NbClust_geografia_indici.png", salva_base_originale("NbClust_geografia_indici.png", function() {
+    par(mfrow = c(2, 2), mar = c(4, 4, 3, 1))
+    for (indice_nome in c("Silhouette", "Duda", "KL", "CH")) {
+      plot(Cl_D0$All.index[, indice_nome], type = "b", pch = 16, col = "#3475AB",
+        xlab = "Indice del K", ylab = indice_nome, main = indice_nome)
+    }
+  }))
+}
+
+cols <- c(Q0 = "#3475AB", Q1 = "#B9474E", Q0norm = "#3E9378", Q1norm = "#A28E3D")
+p_choice <- tenta_output_originale("ChoiceAlpha.png", {
+  dati_choice <- cr8_out %>% pivot_longer(cols = c(Q0, Q1, Q0norm, Q1norm),
+    names_to = "Stat", values_to = "Value") %>% mutate(Value = Value * 100,
+      Grp = if_else(Stat %in% c("Q0", "Q1"), "Non-normalized pseudo inertia", "Normalized pseudo inertia"),
+      Stat = factor(Stat, levels = c("Q0", "Q1", "Q0norm", "Q1norm")))
+  p_choice <- ggplot(dati_choice, aes(alpha, Value, colour = Stat)) +
+    geom_line(linewidth = 0.7) + geom_point(size = 0.8) + facet_wrap(~ Grp) +
+    scale_colour_manual(values = cols) +
+    labs(title = paste("Spatial hierarchical clustering - K=8 -", params$area),
+      x = "alpha", y = "% of explained pseudo inertia", colour = NULL) + tema_originale
+  salva_plot_originale(p_choice, "ChoiceAlpha.png")
+  p_choice
+})
+```
+
+## Partizioni K=3...15, mappe comparative e normalizzazione per il grafico
+
+Gli altri tagli sono ottenuti dagli stessi due alberi dell'originale:
+`tree_D0` e `treeD0D1` all'alpha selezionato a K0. Non si riseleziona
+alpha a ogni taglio diagnostico. La divisione per il massimo nel grafico
+`NormVariablesD0.png` e solo una rappresentazione delle variabili
+grezze, come nell'allegato: non entra nel clustering.
+
+```{r multik-mappe-originali, results='hide'}
+for (k_taglio in 3:15) {
+  DPCM_red2[[paste0("D0_P", k_taglio)]] <- cutree(tree_D0, k_taglio)
+  DPCM_red2[[paste0("D0D1_P", k_taglio)]] <- cutree(treeD0D1, k_taglio)
+}
+campi_tagli <- c(paste0("D0_P", 3:15), paste0("D0D1_P", 3:15))
+Partizioni_multik <- sf::st_drop_geometry(DPCM_red2)[c("id_osservazione", "LAU_Code", campi_tagli)]
+write.csv(Partizioni_multik, file.path(output_dir, "Partizioni_K3_K15.csv"), row.names = FALSE)
+# Riporta i tagli anche nell'oggetto generale, per ID e senza join sui duplicati.
+pos_stima <- match(DPCM_red2$id_osservazione, Data_clusters$id_osservazione)
+for (v in campi_tagli) {
+  valori <- Data_clusters[[v]]
+  if (is.null(valori)) valori <- rep(NA_integer_, nrow(Data_clusters))
+  valori[pos_stima] <- DPCM_red2[[v]]
+  Data_clusters[[v]] <- valori
+}
+# Palette completa gia definita: indipendente dal K finale e dal gruppo Milano.
+crea_mappa_multik <- function(prefisso, titolo, sottotitolo_plot) {
+  campi <- paste0(prefisso, c(3, 8, 15))
+  dati_map <- DPCM_red2 %>% dplyr::select(all_of(campi)) %>%
+    pivot_longer(cols = all_of(campi), names_to = "Taglio", values_to = "Clusters") %>%
+    mutate(Taglio = factor(Taglio, levels = campi, labels = c("K = 3", "K = 8", "K = 15")),
+      Clusters = factor(Clusters, levels = 1:15))
+  ggplot(dati_map) + geom_sf(aes(fill = Clusters), linewidth = 0.035, colour = "#F5F3EF") +
+    facet_wrap(~ Taglio, ncol = 3) +
+    scale_fill_manual(values = palette_multik, name = "Cluster", drop = FALSE) +
+    labs(title = titolo, subtitle = sottotitolo_plot, x = "", y = "",
+      caption = "Tagli dello stesso albero; etichette native, senza abbinamento fra diversi K.") +
+    tema_originale + theme(legend.position = "bottom") + guides(fill = guide_legend(nrow = 2))
+}
+Pa <- tenta_output_originale("ClusterGeoInform.png", {
+  Pa <- crea_mappa_multik("D0D1_P", "Geographically-informed Ward hierarchical clustering",
+    paste(params$area, "- alpha =", alpha_ottimo))
+  salva_plot_originale(Pa, "ClusterGeoInform.png")
+  Pa
+})
+Pb <- tenta_output_originale("ClusterNonGeoInform.png", {
+  Pb <- crea_mappa_multik("D0_P", "Ward-like hierarchical clustering",
+    paste(params$area, "- solo variabili economiche"))
+  salva_plot_originale(Pb, "ClusterNonGeoInform.png", 2400, 2000, 225)
+  Pb
+})
+p_norm <- tenta_output_originale("NormVariablesD0.png", {
+  dati_norm <- DPCM_red2 %>% dplyr::select(all_of(variabili_sei)) %>%
+    mutate(across(is.numeric, function(x) x / max(x, na.rm = TRUE))) %>%
+    pivot_longer(cols = all_of(variabili_sei), names_to = "Vars", values_to = "Values") %>%
+    mutate(Vars = factor(Vars, levels = variabili_sei, labels = etichette_sei, ordered = TRUE))
+  p_norm <- ggplot(dati_norm) + geom_sf(aes(fill = Values), colour = NA) +
+    scale_fill_gradientn(colours = colori_continui) + facet_wrap(~ Vars, nrow = 2, ncol = 3) +
+    labs(title = "Normalized DPCM-related variables by industry and services",
+      subtitle = paste(params$area, "- normalizzazione per il massimo solo nel grafico"),
+      x = "", y = "") + tema_originale
+  salva_plot_originale(p_norm, "NormVariablesD0.png")
+  p_norm
+})
+```
+
+## Profili dei gruppi e riferimento mediano
+
+Si ripristinano le due tabelle che l'originale apriva con `View`: ora
+sono anche esportate in CSV. Le quote sono calcolate per osservazione e
+poi mediate nel gruppo, esattamente come nell'allegato; non sono
+rapporti fra somme. La riga di riferimento usa le mediane delle
+componenti numeriche prima del calcolo delle quote. E conservata come
+tabella, senza unione dei poligoni, poiche non partecipa alle mappe o al
+fit.
+
+I nomi geografici manuali dell'allegato sono conservati come dizionario
+storico separato. Nei risultati nuovi si usano C1...CK: un cambio di
+alpha o di area non autorizza a riassegnare automaticamente nomi come
+"Sardinia" o "Triveneto".
+
+```{r profili-originali, results='hide'}
+Dizionario_etichette_originali <- data.frame(
+  cluster = rep(1:8, 2), tipo = rep(c("Geo", "NoGeo"), each = 8),
+  etichetta_storica = c("South and Sicily", "Piemonte and western Liguria", "Center-South",
+    "Triveneto", "Lombardy and Emilia", "Center", "Large urban centers", "Sardinia",
+    "Low density municipalities", "High density urban centers (sparse)",
+    "Low density urban centers (sparse)", "High density municipalities (sparse)",
+    "Milano hinterland and Torino and Napoli", "City of San Donato Milanese",
+    "Large urban centers (sparse)", "Cities of Milano and Assago"))
+write.csv(Dizionario_etichette_originali, file.path(output_dir, "Dizionario_etichette_originali.csv"), row.names = FALSE)
+
+Profili_originali <- tenta_output_originale("Profili_Geo_NoGeo", {
+  Data_clusters_originale <- sf::st_drop_geometry(DPCM_red2)
+  Regione <- Data_clusters_originale %>%
+    summarise(n = sum(n), across(is.numeric, function(x) median(x, na.rm = TRUE))) %>%
+    mutate(D0D1_P5 = 10, D0D1_P6 = 10, D0D1_P7 = 10, D0D1_P8 = 10,
+      D0_P5 = 10, D0_P6 = 10, D0_P7 = 10, D0_P8 = 10)
+  Data_clusters_originale <- bind_rows(Data_clusters_originale, Regione)
+  nome_riferimento <- if (AOI == "Italy") "National median" else "Regional median"
+  Data_clusters_originale <- Data_clusters_originale %>%
+    mutate(Cluster8_Geo = if_else(D0D1_P8 == 10, nome_riferimento, paste0("C", D0D1_P8)),
+      Cluster8_NoGeo = if_else(D0_P8 == 10, nome_riferimento, paste0("C", D0_P8)))
+
+  Tabella_Geo <- Data_clusters_originale %>%
+    dplyr::select(Pop2021, PopDens_km2, DegUrba, Cluster8_Geo, D0D1_P8,
+      contains("Local_Units"), contains("Workers"), contains("Value_Added")) %>%
+    mutate(Sh_LU_Ind = Local_Units_Industry_Suspended / Local_Units_Industry_Total * 100,
+      Sh_LU_Serv = Local_Units_Services_Suspended / Local_Units_Services_Total * 100,
+      Sh_W_Ind = Workers_Industry_Suspended / Workers_Industry_Total * 100,
+      Sh_W_Serv = Workers_Services_Suspended / Workers_Services_Total * 100,
+      Sh_VA_Ind = Value_Added_Industry_Suspended / Value_Added_Industry_Total * 100,
+      Sh_VA_Serv = Value_Added_Services_Suspended / Value_Added_Services_Total * 100) %>%
+    group_by(Cluster8_Geo, D0D1_P8) %>%
+    summarise(n = n(), across(is.numeric, function(x) mean(x, na.rm = TRUE)), .groups = "drop") %>%
+    dplyr::select(Cluster8_Geo, D0D1_P8, n, Pop2021, PopDens_km2, DegUrba, contains("Sh_"))
+  Tabella_NoGeo <- Data_clusters_originale %>%
+    dplyr::select(Pop2021, PopDens_km2, DegUrba, Cluster8_NoGeo, D0_P8,
+      contains("Local_Units"), contains("Workers"), contains("Value_Added")) %>%
+    mutate(Sh_LU_Ind = Local_Units_Industry_Suspended / Local_Units_Industry_Total * 100,
+      Sh_LU_Serv = Local_Units_Services_Suspended / Local_Units_Services_Total * 100,
+      Sh_W_Ind = Workers_Industry_Suspended / Workers_Industry_Total * 100,
+      Sh_W_Serv = Workers_Services_Suspended / Workers_Services_Total * 100,
+      Sh_VA_Ind = Value_Added_Industry_Suspended / Value_Added_Industry_Total * 100,
+      Sh_VA_Serv = Value_Added_Services_Suspended / Value_Added_Services_Total * 100) %>%
+    group_by(Cluster8_NoGeo) %>%
+    summarise(n = n(), across(is.numeric, function(x) mean(x, na.rm = TRUE)), .groups = "drop") %>%
+    dplyr::select(Cluster8_NoGeo, D0_P8, n, Pop2021, PopDens_km2, DegUrba, contains("Sh_"))
+  write.csv(Tabella_Geo, file.path(output_dir, "Tabella_Geo.csv"), row.names = FALSE)
+  write.csv(Tabella_NoGeo, file.path(output_dir, "Tabella_NoGeo.csv"), row.names = FALSE)
+  write.csv(Regione, file.path(output_dir, "Riferimento_mediano.csv"), row.names = FALSE)
+  list(Geo = Tabella_Geo, NoGeo = Tabella_NoGeo)
+})
+
+n_colori_storici <- 8L + as.integer(milano_fuori_stima)
+colp <- unname(palette_multik[as.character(1:8)])
+if (milano_fuori_stima) colp <- c(colp, "#14212B")
+names(colp) <- as.character(seq_len(n_colori_storici))
+legenda_storica <- paste0("C", seq_len(n_colori_storici))
+if (milano_fuori_stima) legenda_storica[9L] <- "C9: Milano fuori stima"
+p1 <- tenta_output_originale("GeoInform_k8.png", {
+  p1 <- ggplot(Data_clusters) + geom_sf(aes(fill = factor(D0D1_P8, levels = seq_len(n_colori_storici))),
+    linewidth = 0.045, colour = "#F5F3EF") +
+    scale_fill_manual(values = colp, labels = legenda_storica, drop = FALSE, name = "Cluster") +
+    labs(title = "Geographically-informed Ward hierarchical clustering",
+      subtitle = paste(params$area, "- K=8 - alpha =", alpha_ottimo), x = "", y = "") + tema_originale
+  salva_plot_originale(p1, "GeoInform_k8.png")
+  p1
+})
+p2 <- tenta_output_originale("NonGeoInform_k8.png", {
+  p2 <- ggplot(Data_clusters) + geom_sf(aes(fill = factor(D0_P8, levels = seq_len(n_colori_storici))),
+    linewidth = 0.045, colour = "#F5F3EF") +
+    scale_fill_manual(values = colp, labels = legenda_storica, drop = FALSE, name = "Cluster") +
+    labs(title = "Ward-like hierarchical clustering",
+      subtitle = paste(params$area, "- K=8 - solo variabili economiche"), x = "", y = "") + tema_originale
+  salva_plot_originale(p2, "NonGeoInform_k8.png")
+  p2
+})
+```
+
+## Profili al K finale selezionato
+
+Le tabelle storiche restano a K=8. Si aggiungono i profili al **K
+finale** per i casi alpha=0 e alpha scelto, con la stessa media delle
+quote individuali. Questi profili principali usano Employed per le quote
+occupazionali. Le quote Workers nelle tabelle storiche restano
+descrittori aggiuntivi e non entrano nella matrice D0 delle 12
+variabili. Riguardano solo le osservazioni stimate: Milano fuori stima
+non viene incluso.
+
+```{r profili-K-finale}
+crea_profilo_finale <- function(campo) {
+  sf::st_drop_geometry(DPCM_red2) %>%
+    mutate(Cluster_finale = .data[[campo]],
+      Sh_LU_Ind = Local_Units_Industry_Suspended / Local_Units_Industry_Total * 100,
+      Sh_LU_Serv = Local_Units_Services_Suspended / Local_Units_Services_Total * 100,
+      Sh_E_Ind = Employed_Industry_Suspended / Employed_Industry_Total * 100,
+      Sh_E_Serv = Employed_Services_Suspended / Employed_Services_Total * 100,
+      Sh_VA_Ind = Value_Added_Industry_Suspended / Value_Added_Industry_Total * 100,
+      Sh_VA_Serv = Value_Added_Services_Suspended / Value_Added_Services_Total * 100) %>%
+    group_by(Cluster_finale) %>%
+    summarise(K_finale = K, n_osservazioni = n(),
+      comuni_distinti = dplyr::n_distinct(LAU_Code),
+      across(all_of(c("Pop2021", "PopDens_km2", "DegUrba", "Sh_LU_Ind", "Sh_LU_Serv",
+        "Sh_E_Ind", "Sh_E_Serv", "Sh_VA_Ind", "Sh_VA_Serv")),
+        function(x) mean(x, na.rm = TRUE)), .groups = "drop")
+}
+Profili_K_finale_Geo <- crea_profilo_finale("D0D1_P_Kfinale")
+Profili_K_finale_NoGeo <- crea_profilo_finale("D0_P_Kfinale")
+write.csv(Profili_K_finale_Geo, file.path(output_dir, "Profili_K_finale_Geo.csv"), row.names = FALSE)
+write.csv(Profili_K_finale_NoGeo, file.path(output_dir, "Profili_K_finale_NoGeo.csv"), row.names = FALSE)
+```
+
+```{r tabelle-profili-report}
+print(knitr::kable(Profili_K_finale_Geo, digits = 3,
+  caption = paste("Profili al K finale =", K, "- alpha =", alpha_ottimo)))
+print(knitr::kable(Profili_K_finale_NoGeo, digits = 3,
+  caption = paste("Profili al K finale =", K, "- alpha = 0")))
+if (!is.null(Profili_originali)) {
+  print(knitr::kable(Profili_originali$Geo, digits = 3, caption = "Profili storici K=8 Geo e riferimento mediano"))
+  print(knitr::kable(Profili_originali$NoGeo, digits = 3, caption = "Profili storici K=8 NoGeo e riferimento mediano"))
+}
+```
+
+```{r immagini-output-originali, echo=FALSE, out.width='100%'}
+immagini_originali <- c("DoubleNormVariablesD0_Lombardy.png", "CorrMat.png", "D0_mat.png",
+  "D1_mat.png", "AvgDist_D0.png", "AvgDist_D1.png", "ChoiceAlpha.png", "Dendrogram_D0.png",
+  "Dendrogram.png", "Dendrogram_K3_originale.png", "Indici_K2_K15.png", "NbClust_geografia_indici.png", "ClusterGeoInform.png",
+  "ClusterNonGeoInform.png", "NormVariablesD0.png", "GeoInform_k8.png", "NonGeoInform_k8.png",
+  paste0("ChoiceAlpha_K", 1:10, ".png"), "Differenza_Qnorm_K2.png",
+  paste0("Dendrogram_", casi$caso, ".png"))
+immagini_esistenti <- file.path(output_dir, immagini_originali)
+grafici_in_errore <- if (length(errori_output_originali)) {
+  vapply(errori_output_originali, function(x) x$operazione[1L], character(1))
+} else character()
+immagini_esistenti <- immagini_esistenti[file.exists(immagini_esistenti) &
+  !basename(immagini_esistenti) %in% grafici_in_errore]
+if (length(immagini_esistenti)) knitr::include_graphics(immagini_esistenti)
+```
+
+# Salvataggio degli output
+
+Si salvano le etichette native e quelle usate per i colori
+separatamente. `Risultati_selezione_K_alpha.RData` contiene gli oggetti
+elencati dell'analisi. `Res_national_11082024.RData` ripristina il
+salvataggio generale dell'originale, prendendo gli oggetti dall'ambiente
+del documento R Markdown, non da una diversa sessione interattiva. I
+nomi storici sono mantenuti anche quando l'area scelta e la Lombardia:
+`configurazione` specifica sempre il dataset. I quattro alberi sono veri
+oggetti `hclust` prodotti da ClustGeo in R.
+
+| Output | Contenuto |
+|:-----------------------------------|:-----------------------------------|
+| `Selezione_K_alpha.csv` e `Scelta_finale.txt` | K0, alpha scelto a K0, K finale e modalita effettive; e la risposta numerica prodotta dal run. |
+| `Passaggi_selezione.csv` | Decisioni dei tre passaggi e proposte automatiche, anche in modalita manuale. |
+| `Diagnostica_K0.csv`, `Diagnostica_K_finale.csv` | Inerzie economiche, geografiche, miste e punteggi del gomito per ogni K. |
+| `Selezione_K_gomiti.png`, `Selezione_K_dendrogrammi.png` | Curve e alberi da ispezionare per la scelta di K. |
+| `Curve_alpha_selezione_K0.csv`, `Selezione_alpha_Qnorm.png` | Griglia di selezione di alpha, Qnorm e criterio del paper, a K0. |
+| `Variabili_clustering.csv` | Nomi e ordine delle 12 variabili realmente utilizzate, senza Revenues e Workers. |
+| `Audit_filtro_duplicati.csv`, `Comuni_duplicati_prima_filtro.csv` | Conteggi prima/dopo e moltiplicita dei codici filtrati. |
+| `Righe_rimosse_duplicati.csv`, `Controllo_duplicati_valori.csv` | Righe eliminate e verifica che le copie concordino sui valori del fit. |
+| `Audit_unita_statistiche.csv`, `Comuni_duplicati_stima.csv` | Audit del nuovo run; la seconda tabella deve essere vuota, con le sole intestazioni. |
+| `Curve_alpha_K8.csv` | Curva diagnostica realmente a K=8; coincide con la curva di selezione solo se K0=8. |
+| `Casi_alpha.csv` | I quattro casi confrontati e i loro valori effettivi di alpha. |
+| `ARI_matrice.csv`, `ARI_confronti_coppie.csv` | Matrice 4x4 e sei confronti, sulle osservazioni di stima. |
+| `ARI_mappa_calore.png` e `.pdf` | Visualizzazione degli ARI con valori annotati. |
+| `Mappe_quattro_alpha.png` e `.pdf` | Quattro mappe con la palette scelta e colori abbinati. |
+| Mappe_alpha0_alphaottimo_K2_K15.png e .pdf | Figura unica con 28 pannelli, due alpha per ogni K. |
+| Profili_gruppi_interattivi.html | Profili filtrabili, ordinabili ed esportabili, per K=2...15 e tre scale. |
+| Dimensioni_gruppi_interattive.html | Numerosita e riferimenti cromatici dei gruppi. |
+| Profili_gruppi_K2_K15.csv e .rds | Statistiche complete alla precisione originale. |
+| Partizioni_alpha0_alphaottimo_K2_K15.csv | Tutti i tagli nativi usati nella figura e nei profili. |
+| ARI_alpha0_alphaottimo_K2_K15.csv | Confronto delle due partizioni a ogni K. |
+| ARI_stabilita_K_alpha0.csv e .html | Matrice ARI 14x14 tra K=2...15 ad alpha=0. |
+| ARI_stabilita_K_alphaottimo.csv e .html | Matrice ARI 14x14 tra K=2...15 all'alpha ottimo fisso. |
+| ARI_stabilita_K_coppie.csv | 182 confronti distinti, con indicazione dei tagli consecutivi. |
+| ARI_stabilita_K_mappe_calore.png e .pdf | Due matrici affiancate con scala cromatica comune. |
+| ARI_stabilita_alpha_K2.csv ... ARI_stabilita_alpha_K15.csv | Una matrice ARI 11x11 per ogni K, alpha=0.00, 0.10, ..., 1.00. |
+| ARI_stabilita_alpha_matrici.html e .rds | Matrici con filtro HTML per K e lista R alla precisione originale. |
+| ARI_stabilita_alpha_coppie.csv | 770 confronti distinti, con indicazione degli alpha consecutivi. |
+| ARI_stabilita_alpha_mappe_calore.png e .pdf | Figura unica con 14 pannelli a K fisso. |
+| Griglia_alpha_ARI.csv | Gli 11 alpha della diagnostica e gli alberi riutilizzati. |
+| Partizioni_stabilita_alpha_K2_K15.rds | Etichette native dei 154 tagli e identificativi dei comuni. |
+| `Palette_cluster.csv` | Corrispondenza fra etichette dei cluster e codici colore. |
+| `Risultati_selezione_K_alpha.RData` | Selezione completa, quattro partizioni al K finale, ARI, profili, griglia, palette e oggetti gia previsti. |
+| `Profili_K_finale_Geo.csv`, `Profili_K_finale_NoGeo.csv` | Profili al K finale; le tabelle storiche Tabella_Geo/NoGeo rimangono a K=8. |
+| `Res_national_11082024.RData` | Snapshot dell'analisi con gli oggetti originali e quelli aggiunti. |
+| `Res_Nat_AlphaGivenK.RData` | Curve cr1...cr10 appena ricalcolate; non viene usato per sovrascrivere i dati del run. |
+| `Indice_output_originali.csv` | Elenco degli output attesi e di quelli generati, con riferimenti al codice originale. |
+| `Errori_output_originali.csv` | Errori delle diagnostiche, se presenti; nessun risultato sostitutivo inventato. |
+
+```{r esportazione}
+file_input <- file.path(base_path, c("data/DPCM/DPCM_cleaned.xlsx",
+  "data/anagrafica_comuni/Manually_matched_LAUs_Oct2023.xlsx",
+  "data/anagrafica_comuni/LAU2021_Eurostat_Italy.RData"))
+provenienza <- data.frame(file = normalizePath(file_input, mustWork = TRUE),
+                           md5 = unname(tools::md5sum(file_input)),
+                           bytes = unname(file.info(file_input)$size))
+configurazione <- list(parametri = params, area_effettiva = AOI,
+  Milano_nella_stima = includi_milano, K0 = K0, K = K, n = n,
+  sequenza = "K0 su D0 -> alpha a K0 fissato -> K finale ad alpha fissato",
+  criterio_K = "Gomito: massima distanza dalla corda; verificare dendrogramma",
+  criterio_alpha = "paper_assoluto", criterio_alpha_descrizione = descrizione_criterio_alpha,
+  K_candidati = K_candidati, K0_automatico = K0_automatico,
+  K_finale_automatico = K_finale_automatico,
+  alpha_scelto = alpha_ottimo, alpha_automatico = alpha_automatico,
+  alpha_step = params$alpha_step, griglia_alpha = cr_K0$range.alpha,
+  alpha_ricalcolato_dopo_K_finale = FALSE,
+  palette_mappe = params$palette_mappe, palette_cluster = palette_cluster,
+  pretrattamento = "ricodifica e somme originali; filter copie; 12 variabili; densita e mediana/IQR",
+  distanze = "D0 euclidea; D1 geodetica WGS84 tra centroidi, in metri",
+  campi_centroidi = c("Lon_centr_LAU", "Lat_centr_LAU"),
+  ellissoide = c(a_metri = 6378137, f = 1 / 298.257223563),
+  normalizzazione_distanze = "divisione per massimo di ciascuna matrice",
+  inerzie_normalizzate = c(T0 = T0_std, T1 = T1_std),
+  variabili_D0 = colnames(Xmat_nogeo), p_variabili = length(variabili_clustering),
+  gestione_duplicati = "filter(!duplicated(LAU_Code)) dopo le somme e prima di CData",
+  K_figura_profili = K_confronto, scale_profili = names(scale_profili),
+  alpha_ARI_a_K_fisso = griglia_alpha_ARI,
+  asimmetria = "Fisher-Pearson corretta G1 (type 2)",
+  curtosi = "eccesso corretto G2 (type 2), riferimento normale 0",
+  R = R.version.string, ClustGeo = as.character(packageVersion("ClustGeo")),
+  mclust = as.character(packageVersion("mclust")),
+  geosphere = as.character(packageVersion("geosphere")),
+  DT = as.character(packageVersion("DT")), htmlwidgets = as.character(packageVersion("htmlwidgets")))
+
+write.csv(partizioni, file.path(output_dir, "Partizioni_native.csv"), row.names = FALSE)
+write.csv(partizioni_colori, file.path(output_dir, "Partizioni_colori_stima.csv"), row.names = FALSE)
+write.csv(sf::st_drop_geometry(Data_clusters),
+            file.path(output_dir, "Presentazione_e_dati_comunali.csv"), row.names = FALSE)
+write.csv(abbinamenti, file.path(output_dir, "Abbinamento_colori.csv"), row.names = FALSE)
+write.csv(cr8_out, file.path(output_dir, "Curve_alpha_K8.csv"), row.names = FALSE)
+write.csv(indici, file.path(output_dir, "Indici_quattro_alpha.csv"), row.names = FALSE)
+write.csv(casi, file.path(output_dir, "Casi_alpha.csv"), row.names = FALSE)
+write.csv(data.frame(caso = rownames(ARI_matrice), ARI_matrice, check.names = FALSE),
+            file.path(output_dir, "ARI_matrice.csv"), row.names = FALSE)
+write.csv(ARI_coppie, file.path(output_dir, "ARI_confronti_coppie.csv"), row.names = FALSE)
+tabella_palette <- data.frame(cluster = names(palette_cluster),
+  etichetta = legenda_cluster, colore_hex = unname(palette_cluster))
+write.csv(tabella_palette, file.path(output_dir, "Palette_cluster.csv"), row.names = FALSE)
+write.csv(audit_dimensioni, file.path(output_dir, "Audit_dimensioni.csv"), row.names = FALSE)
+write.csv(provenienza, file.path(output_dir, "Input_MD5.csv"), row.names = FALSE)
+write.csv(dimensioni_cluster, file.path(output_dir, "Dimensioni_cluster.csv"), row.names = FALSE)
+saveRDS(configurazione, file.path(output_dir, "Configurazione.rds"))
+# Il GeoPackage usa gli ID delle osservazioni; il FID originale puo essere
+# ripetuto per effetto del join. La tabella completa resta in CSV e nell'RData.
+campi_mappa <- c("id_osservazione", "LAU_Code", "NUTS2_Name", casi$caso,
+                  paste0(casi$caso, "_originale"))
+geometrie_output <- Data_clusters %>% dplyr::select(all_of(campi_mappa))
+sf::st_write(geometrie_output, file.path(output_dir, "Mappe_quattro_alpha.gpkg"),
+               layer = "cluster", delete_layer = TRUE, quiet = TRUE)
+
+oggetti <- c("CData", "Xmat_nogeo", "Xmat_geo", "n", "wt", "K0", "K", "kopt", "K_candidati",
+  "variabili_clustering", "Audit_filtro_duplicati", "Comuni_duplicati_prima_filtro",
+  "Righe_rimosse_duplicati", "Controllo_duplicati_valori",
+  "K0_automatico", "K_finale_automatico", "diagnostica_K0", "diagnostica_K_finale",
+  "Manifesto_variabili", "Audit_unita_statistiche", "Comuni_duplicati_stima",
+  "T0_std", "T1_std", "Indici_geodetici", "descrizione_criterio_alpha",
+  "selezione_K_alpha", "riepilogo_selezione", "cr_K0", "curva_alpha_K0", "tree_alpha_scelto",
+  "cr8", "cr8_out", "range_alpha", "casi", "alpha_ottimo", "alpha_automatico", "alpha_fisso",
+  "tree_D0", "treeD0D1", "treeD0D1_alpha0", "treeD0D1_alpha010", "treeD0D1_alpha1",
+  "alberi", "partizioni", "partizioni_colori", "Data_clusters", "DPCM_red2",
+  "indici", "ARI_matrice", "ARI_coppie", "ARI_long",
+  "palette_cluster", "palette_multik", "tabella_palette",
+  "Profili_K_finale_Geo", "Profili_K_finale_NoGeo",
+  "K_confronto", "Casi_multik", "Partizioni_multik_confronto", "Colori_multik_confronto",
+  "Abbinamento_colori_multik", "Dimensioni_multik", "ARI_multik", "Profili_gruppi_multik",
+  "ARI_stabilita_K", "ARI_stabilita_K_alpha0", "ARI_stabilita_K_alphaottimo",
+  "ARI_stabilita_K_long", "ARI_stabilita_K_coppie",
+  "griglia_alpha_ARI", "Griglia_alpha_ARI", "Partizioni_alpha_ARI",
+  "ARI_stabilita_alpha", "ARI_stabilita_alpha_long", "ARI_stabilita_alpha_coppie",
+  "ARI_stabilita_alpha_tabella",
+  "dimensioni_cluster", "configurazione", "provenienza")
+
+if (isTRUE(params$salva_distanze)) {
+  oggetti <- c(oggetti, "DMat", "DMat_geo", "D0", "D1", "D0_std", "D1_std")
+}
+
+# Oggetti e diagnostiche che l'allegato conservava nel workspace.
+nomi_originali <- c("Data_plot", "q", "corr", "corrmat", "p_corr", "f1", "f2",
+  "ind_sil", "ind_ch", "ind_dunn", "ind_mc", "ind_c", "clustering", "clust", "indexes",
+  "stats", "Cl_D0", paste0("cr", 1:10), paste0("cr", 1:10, "_Q0"), "cr_out", "diff_cr_out",
+  "Pa", "Pb", "p1", "p2", "colp", "Regione", "Data_clusters_originale", "Tabella_Geo",
+  "Tabella_NoGeo", "Profili_originali", "Dizionario_etichette_originali", "Partizioni_multik",
+  "NbClust_economico", "NbClust_indici", "NbClust_raccomandazioni", "gomiti_originali",
+  "curve_per_K", "kmpp", "NbClust_mod", "Estim_alpha", "test")
+oggetti <- union(oggetti, intersect(nomi_originali, ls(envir = knitr::knit_global())))
+
+# Cache esportata per completezza; l'analisi non la carica e non sovrascrive D0/D1.
+nomi_cache <- c(paste0("cr", 1:10), "curve_per_K", "configurazione")
+if (isTRUE(params$salva_distanze)) nomi_cache <- c(nomi_cache, "D0", "D1", "D0_std", "D1_std")
+tenta_output_originale("Res_Nat_AlphaGivenK.RData",
+  save(list = nomi_cache, envir = knitr::knit_global(),
+    file = file.path(output_dir, "Res_Nat_AlphaGivenK.RData"), compress = "gzip"))
+
+# save.image() salverebbe l'ambiente globale, che puo differire da quello del knit.
+# Qui si salva lo snapshot dell'ambiente nel quale l'analisi e stata eseguita.
+if (exists(".Random.seed", envir = .GlobalEnv, inherits = FALSE)) {
+  assign(".Random.seed", get(".Random.seed", envir = .GlobalEnv), envir = knitr::knit_global())
+}
+oggetti_workspace <- ls(envir = knitr::knit_global(), all.names = TRUE)
+if (!isTRUE(params$salva_distanze)) {
+  oggetti_workspace <- setdiff(oggetti_workspace, c("DMat", "DMat_geo", "D0", "D1", "D0_std", "D1_std"))
+}
+tenta_output_originale("Res_national_11082024.RData",
+  save(list = oggetti_workspace, envir = knitr::knit_global(),
+    file = file.path(output_dir, "Res_national_11082024.RData"), compress = "gzip"))
+
+# Inventario: i dodici PNG e il workspace salvati esplicitamente nell'allegato,
+# piu le diagnostiche/tabelle che prima erano soltanto mostrate a video.
+Catalogo_output_originali <- data.frame(
+  file = c("DoubleNormVariablesD0_Lombardy.png", "CorrMat.png", "D0_mat.png", "D1_mat.png",
+    "AvgDist_D0.png", "ChoiceAlpha.png", "Dendrogram.png", "ClusterGeoInform.png",
+    "ClusterNonGeoInform.png", "NormVariablesD0.png", "GeoInform_k8.png", "NonGeoInform_k8.png",
+    "Res_national_11082024.RData", "Dendrogram_D0.png", "Indici_K2_K15.csv", "Indici_K2_K15.png",
+    "Gomiti_indici_originali.csv", "NbClust_economico.rds", "NbClust_economico_indici.csv",
+    "NbClust_economico_raccomandazioni.csv", "Differenza_Qnorm_K2.csv", "Differenza_Qnorm_K2.png",
+    "Cr_out_originale.csv", "Differenze_cr_out_originale.csv", "NbClust_geografia.rds",
+    "NbClust_geografia_indici.csv", "NbClust_geografia_indici.png", "NbClust_geografia_raccomandazioni.csv",
+    "Partizioni_K3_K15.csv", "Tabella_Geo.csv", "Tabella_NoGeo.csv", "Riferimento_mediano.csv",
+    "Res_Nat_AlphaGivenK.RData", "Correlazioni.csv", "Correlazioni_grafico.csv", "Distanze_medie.csv",
+    "AvgDist_D1.png", "Dendrogram_K3_originale.png",
+    paste0("ChoiceAlpha_K", 1:10, ".csv"), paste0("ChoiceAlpha_K", 1:10, ".png")),
+  stringsAsFactors = FALSE)
+Catalogo_output_originali$origine <- c(
+  rep("File salvato esplicitamente nell'allegato", 13),
+  "Dendrogramma non spaziale mostrato a video", "Matrice indexes K=2...15", "Grafici della matrice indexes",
+  "which.max(abs(diff(indexes)))", "Oggetti ind_sil/ind_ch/ind_dunn/ind_mc/ind_c",
+  "All.index economici", "Best.nc economici", "cr2 Q1norm-Q0norm", "Grafico cr2 Q1norm-Q0norm",
+  "cr_out", "diff(cr_out)", "Cl_D0 geografico", "Cl_D0 All.index", "Quattro grafici di Cl_D0",
+  "Cl_D0 Best.nc", "D0_P3...P15 e D0D1_P3...P15", "View Geo", "View No geo", "Regione",
+  "Salvataggio delle curve, commentato nell'allegato", "Oggetto corr", "Oggetto corrmat",
+  "AvgDist_D0/AvgDist_D1", "Mappa aggiuntiva della distanza D1",
+  "Taglio K=3 del dendrogramma nell'allegato", rep("cr1...cr10", 20))
+percorsi_catalogo <- file.path(output_dir, Catalogo_output_originali$file)
+Catalogo_output_originali$presente <- file.exists(percorsi_catalogo)
+Catalogo_output_originali$bytes <- unname(file.info(percorsi_catalogo)$size)
+Errori_output_originali <- if (length(errori_output_originali)) {
+  dplyr::bind_rows(errori_output_originali)
+} else data.frame(operazione = character(), messaggio = character())
+Catalogo_output_originali$stato <- ifelse(Catalogo_output_originali$presente &
+  !is.na(Catalogo_output_originali$bytes) & Catalogo_output_originali$bytes > 0,
+  "generato", "non generato")
+Catalogo_output_originali$stato[Catalogo_output_originali$file %in% Errori_output_originali$operazione] <- "errore"
+write.csv(Catalogo_output_originali, file.path(output_dir, "Indice_output_originali.csv"), row.names = FALSE)
+write.csv(Errori_output_originali, file.path(output_dir, "Errori_output_originali.csv"), row.names = FALSE)
+Catalogo_selezione <- data.frame(file = c(
+  "Diagnostica_K0.csv",
+  "Curve_alpha_selezione_K0.csv",
+  "Diagnostica_K_finale.csv",
+  "Passaggi_selezione.csv",
+  "Selezione_K_alpha.csv",
+  "Scelta_finale.txt",
+  "Selezione_K_gomiti.png",
+  "Selezione_alpha_Qnorm.png",
+  "Selezione_K_dendrogrammi.png",
+  "Profili_K_finale_Geo.csv",
+  "Profili_K_finale_NoGeo.csv",
+  "Variabili_clustering.csv",
+  "Audit_unita_statistiche.csv",
+  "Comuni_duplicati_stima.csv",
+  "Audit_filtro_duplicati.csv",
+  "Comuni_duplicati_prima_filtro.csv",
+  "Righe_rimosse_duplicati.csv",
+  "Controllo_duplicati_valori.csv",
+  "Indici_geodetici_K2_K15.csv",
+  "Casi_multik_K2_K15.csv",
+  "Partizioni_alpha0_alphaottimo_K2_K15.csv",
+  "Abbinamento_colori_K2_K15.csv",
+  "Dimensioni_gruppi_K2_K15.csv",
+  "ARI_alpha0_alphaottimo_K2_K15.csv",
+  "ARI_stabilita_K_alpha0.csv",
+  "ARI_stabilita_K_alphaottimo.csv",
+  "ARI_stabilita_K_coppie.csv",
+  "ARI_stabilita_K_alpha0.html",
+  "ARI_stabilita_K_alphaottimo.html",
+  "ARI_stabilita_K_mappe_calore.png",
+  "ARI_stabilita_K_mappe_calore.pdf",
+  "Griglia_alpha_ARI.csv",
+  "Partizioni_stabilita_alpha_K2_K15.rds",
+  paste0("ARI_stabilita_alpha_K", K_confronto, ".csv"),
+  "ARI_stabilita_alpha_matrici.rds",
+  "ARI_stabilita_alpha_coppie.csv",
+  "ARI_stabilita_alpha_matrici.html",
+  "ARI_stabilita_alpha_mappe_calore.png",
+  "ARI_stabilita_alpha_mappe_calore.pdf",
+  "Mappe_alpha0_alphaottimo_K2_K15.png",
+  "Mappe_alpha0_alphaottimo_K2_K15.pdf",
+  "Profili_gruppi_K2_K15.csv",
+  "Profili_gruppi_K2_K15.rds",
+  "Dimensioni_gruppi_interattive.html",
+  "Profili_gruppi_interattivi.html"))
+
+Catalogo_selezione$presente <- file.exists(file.path(output_dir, Catalogo_selezione$file))
+Catalogo_selezione$bytes <- unname(file.info(file.path(output_dir, Catalogo_selezione$file))$size)
+stopifnot(all(Catalogo_selezione$presente), all(Catalogo_selezione$bytes > 0))
+write.csv(Catalogo_selezione, file.path(output_dir, "Indice_output_selezione.csv"), row.names = FALSE)
+oggetti <- union(oggetti, c("Catalogo_output_originali", "Errori_output_originali", "Catalogo_selezione"))
+save(list = oggetti, envir = knitr::knit_global(),
+       file = file.path(output_dir, "Risultati_selezione_K_alpha.RData"), compress = "gzip")
+writeLines(capture.output(sessionInfo()), file.path(output_dir, "sessionInfo.txt"))
+writeLines(capture.output(sf::sf_extSoftVersion()),
+            file.path(output_dir, "Versioni_GEOS_GDAL_PROJ.txt"))
+completa_originali <- all(Catalogo_output_originali$stato == "generato") && nrow(Errori_output_originali) == 0L
+stato_finale <- if (completa_originali) "COMPLETATA IN R" else "COMPLETATA CON ERRORI NEGLI OUTPUT ORIGINALI"
+file_attestato <- if (completa_originali) "ESECUZIONE_COMPLETATA_R.txt" else "ESECUZIONE_CON_ERRORI_OUTPUT_ORIGINALI.txt"
+writeLines(c(stato_finale, paste("Area:", params$area),
+              paste("Milano nella stima:", includi_milano), paste("K0:", K0), paste("K finale:", K),
+              paste("Alpha scelto:", alpha_ottimo), paste("Fine:", Sys.time())),
+            file.path(output_dir, file_attestato))
+writeLines(stato_finale, file.path(output_dir, "STATO.txt"))
+cat("Risultati salvati in:", output_dir)
+```
+
+## Verifica degli output generati
+
+Lo stato finale distingue l'esecuzione completa dagli errori delle
+diagnostiche originali. La tabella indica i file presenti nella cartella
+del run, non una dichiarazione preventiva di riuscita.
+
+```{r indice-output-report}
+knitr::kable(Catalogo_selezione, caption = "Output della selezione di K e alpha", row.names = FALSE)
+knitr::kable(Catalogo_output_originali[c("file", "origine", "stato")], row.names = FALSE)
+if (nrow(Errori_output_originali)) {
+  print(knitr::kable(Errori_output_originali, caption = "Errori effettivamente restituiti da R", row.names = FALSE))
+}
+```
+
+# Verifica indipendente degli RData storici, in R
+
+Il blocco seguente puo essere copiato nella console R e lanciato anche
+separatamente dal clustering. Adattare i due percorsi. I workspace sono
+caricati uno alla volta in un ambiente separato; non sostituiscono mai i
+dati o le matrici del nuovo run. Si leggono solo struttura, colonne e
+codici, senza ricalcolare i modelli storici.
+
+```{r audit-RData-storici, eval=FALSE}
+audit_RData <- function(percorso) {
+  ambiente <- new.env(parent = baseenv())
+  load(percorso, envir = ambiente)
+  if (!exists("Xmat_nogeo", ambiente, inherits = FALSE) ||
+      !exists("DPCM_red2", ambiente, inherits = FALSE)) {
+    stop("Mancano Xmat_nogeo o DPCM_red2 nel workspace.")
+  }
+  x <- get("Xmat_nogeo", ambiente, inherits = FALSE)
+  d <- unclass(get("DPCM_red2", ambiente, inherits = FALSE))
+  codici <- as.character(d[["LAU_Code"]])
+  frequenze <- table(codici)
+  ripetuti <- frequenze[frequenze > 1L]
+  duplicati <- data.frame(LAU_Code = names(ripetuti), righe = as.integer(ripetuti))
+  duplicati$Comune <- as.character(d[["LAU_Name"]])[match(duplicati$LAU_Code, codici)]
+  duplicati$righe_in_eccesso <- duplicati$righe - 1L
+  risultato <- list(
+    riepilogo = data.frame(file = basename(percorso), righe_X = nrow(x),
+      colonne_X = ncol(x), codici_distinti = length(frequenze),
+      comuni_ripetuti = length(ripetuti), righe_in_eccesso = sum(duplicati$righe_in_eccesso),
+      MD5 = unname(tools::md5sum(percorso))),
+    variabili = data.frame(posizione = seq_len(ncol(x)), nome = colnames(x)),
+    duplicati = duplicati)
+  rm(ambiente, x, d)
+  invisible(gc())
+  risultato
+}
+file_storici <- c("Res_national_11082024.RData", "res1911.RData")
+dir_audit_storici <- file.path(getwd(), "Audit_RData_storici")
+dir.create(dir_audit_storici, recursive = TRUE, showWarnings = FALSE)
+for (ff in file_storici) {
+  esito <- audit_RData(ff)
+  print(esito$riepilogo)
+  print(esito$variabili)
+  print(esito$duplicati)
+  prefisso <- tools::file_path_sans_ext(basename(ff))
+  for (nm in names(esito)) write.csv(esito[[nm]],
+    file.path(dir_audit_storici, paste0(prefisso, "_", nm, ".csv")), row.names = FALSE)
+}
+```
+
+# Coerenza con lo script allegato
+
+Il riferimento e **Analysis_national - AC(1).R**, l'ultimo file
+allegato, non una versione precedente. La verifica riguarda il codice;
+la conferma numerica richiede l'esecuzione in R sullo stesso ambiente e
+sugli stessi file.
+
+| Parte | Trattamento in questo documento |
+|:-----------------------------------|:-----------------------------------|
+| Lettura DPCM, tabella manuale e anagrafica | Stesse istruzioni e stessi percorsi relativi. |
+| Ricodifica dei comuni e somma per codice | Stesso ciclo e stesso `group_by` con `mutate`, seguito dal nuovo filtro delle copie per codice. |
+| Variabili di clustering | Solo Local_Units, Value_Added ed Employed: 12 colonne esplicite. Revenues e Workers esclusi da D0. |
+| Divisione per area e standardizzazione | Stesse formule; applicate dopo il filtro delle copie e l'opzione Milano, sulle 12 variabili. |
+| Distanze | D0 euclidea sulle 12 variabili. D1 geodetica WGS84 sui centroidi, in metri; divisione per massimo conservata. |
+| Pesi | Uniformi 1/n, ora con una riga per comune; n letto da Xmat_nogeo. |
+| Compatibilita R | Se necessario, `is_empty` viene risolto come `rlang::is_empty`; il ciclo di ricodifica rimane letterale. |
+| Italia/Lombardia | Parametrizzato il filtro territoriale che nell'originale era fissato anche dentro CData. |
+| Milano | Esclusione opzionale solo in Lombardia, prima di CData; gruppo C(K+1) aggiunto dopo il fit, C9 se K=8. |
+| K | Nuova selezione sequenziale K0 su D0 e K finale ad alpha fissato; gomito operativo esplicito e ispezione dei dendrogrammi. Disponibile la scelta manuale dei due K. |
+| Griglia di alpha | Passo `alpha_step` parametrico, sempre con 0 e 1. Il valore 0.1 ripristina la griglia originale; il default e 0.001. |
+| Scelta di alpha | Solo paper_assoluto, minimo di abs(Q0norm-Q1norm) a K0 fissato. |
+| Audit delle unita | Conteggi prima/dopo e righe rimosse; controllo di unicita nel fit finale. |
+| Altri K | Ripristinati cr1...cr10; cr8 e sempre realmente K=8 e usa alpha_step. Gli altri conservano le griglie diagnostiche dell'allegato. |
+| Profili | Tabelle HTML interattive per K=2...15, con centralita, variabilita, asimmetria e curtosi; conservati anche i profili storici. |
+| ARI | Tutti i sei confronti fra i quattro alpha, sulle sole osservazioni di stima, con `mclust::adjustedRandIndex`. |
+| Mappe | Quattro alpha al K finale e nuova figura a 28 pannelli: alpha=0/ottimo per K=2...15. |
+| Salvataggio | RData degli oggetti elencati, snapshot generale dell'analisi e indice verificabile degli output originali. |
+
+Si mantengono le ricodifiche e le somme originali; le copie comunali
+sono ora filtrate dopo le somme e D0 usa 12 variabili. Il passo di alpha
+resta selezionabile. I vecchi alpha e le vecchie partizioni non vengono
+riutilizzati e non sono risultati attesi di questo documento. La
+selezione automatica usa esclusivamente l'equazione (7), con le distanze
+geodetiche. Un vecchio alpha non e imposto al nuovo run.
+
+Non si afferma che il paper prescriva un selettore automatico univoco di
+K. L'intervallo dei candidati e la regola del gomito sono documentati e
+salvati per consentire una verifica; la scelta visuale puo essere
+registrata con i parametri manuali. Le correzioni richieste allineano il
+nuovo fit a 12 variabili, una riga per comune e distanze geodetiche. La
+conferma dei valori dei Results richiede il nuovo run in R.
+
+SHA256 del file di riferimento allegato:
+`7d63aa44c1578d0c03bb84511e323318b9bdc9f6e80c1824ec9bf2d0311b7605`.
+
+## Esecuzioni da console R
+
+In alternativa a Knit with Parameters, adattare i percorsi ed eseguire
+una delle chiamate seguenti. Il file Rmd puo trovarsi in qualsiasi
+cartella; `base_path` indica la cartella del progetto originale
+contenente i dati. Ogni chiamata usa un ambiente R separato, per
+conservare distinti i workspace dei run.
+
+```{r esempi-render, eval=FALSE}
+doc <- "Clustering_Italia_Lombardia_K_alpha.Rmd"
+percorso <- '/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering'
+
+rmarkdown::render(doc, envir = new.env(parent = globalenv()), output_file = "Italia_selezione_K_alpha.html",
+  params = list(base_path = percorso, area = "Italia", includi_milano = TRUE,
+                scelta_K = "automatico", scelta_alpha = "automatico",
+                K_min = 2, K_max = 15, alpha_step = 0.001, palette_mappe = "sobria"))
+
+rmarkdown::render(doc, envir = new.env(parent = globalenv()), output_file = "Lombardia_con_Milano_selezione.html",
+  params = list(base_path = percorso, area = "Lombardia", includi_milano = TRUE,
+                scelta_K = "automatico", scelta_alpha = "automatico",
+                alpha_step = 0.001, palette_mappe = "sobria"))
+
+rmarkdown::render(doc, envir = new.env(parent = globalenv()), output_file = "Lombardia_senza_Milano_selezione.html",
+  params = list(base_path = percorso, area = "Lombardia", includi_milano = FALSE,
+                scelta_K = "automatico", scelta_alpha = "automatico",
+                alpha_step = 0.001, palette_mappe = "sobria"))
+
+# Verifica visiva a K0=K finale=8: alpha e ancora selezionato con l'eq. (7).
+rmarkdown::render(doc, envir = new.env(parent = globalenv()), output_file = "Lombardia_K8_alpha_paper_automatico.html",
+  params = list(base_path = percorso, area = "Lombardia", includi_milano = FALSE,
+                scelta_K = "manuale", K0_manuale = 8, K_finale_manuale = 8,
+                scelta_alpha = "automatico", alpha_step = 0.001))
+
+# Scenario ai valori riportati nel paper: li FISSA, non li seleziona dai dati.
+rmarkdown::render(doc, envir = new.env(parent = globalenv()), output_file = "Lombardia_K8_alpha010_riferimento_paper.html",
+  params = list(base_path = percorso, area = "Lombardia", includi_milano = FALSE,
+                scelta_K = "manuale", K0_manuale = 8, K_finale_manuale = 8,
+                scelta_alpha = "manuale", alpha_manuale = 0.10,
+                alpha_step = 0.001, palette_mappe = "sobria"))
+
+# Per visualizzare esattamente alpha=0.038, senza vincolarlo alla selezione automatica:
+rmarkdown::render(doc, envir = new.env(parent = globalenv()), output_file = "Lombardia_alpha_0038.html",
+  params = list(base_path = percorso, area = "Lombardia", includi_milano = FALSE,
+                scelta_K = "manuale", K0_manuale = 8, K_finale_manuale = 8,
+                scelta_alpha = "manuale", alpha_manuale = 0.038,
+                alpha_step = 0.1, palette_mappe = "sobria"))
+
+# Per riprendere anche l'alpha fissato nel fit finale originale:
+rmarkdown::render(doc, envir = new.env(parent = globalenv()), output_file = "Lombardia_alpha_originale.html",
+  params = list(base_path = percorso, area = "Lombardia", includi_milano = TRUE,
+                scelta_K = "manuale", K0_manuale = 8, K_finale_manuale = 8,
+                scelta_alpha = "manuale", alpha_manuale = 0.02))
+```
+
+## Documentazione delle funzioni e ambiente
+
+-   [ClustGeo:
+    hclustgeo](https://search.r-project.org/CRAN/refmans/ClustGeo/html/hclustgeo.html).
+-   [ClustGeo:
+    choicealpha](https://search.r-project.org/CRAN/refmans/ClustGeo/html/choicealpha.html).
+-   [geosphere: distGeo, geodetica ellissoidale
+    WGS84](https://search.r-project.org/CRAN/refmans/geosphere/html/distGeo.html).
+-   [geosphere: distm, matrice delle
+    distanze](https://search.r-project.org/CRAN/refmans/geosphere/html/distm.html).
+-   [mclust:
+    adjustedRandIndex](https://mclust-org.github.io/mclust/reference/adjustedRandIndex.html).
+-   [NbClust: indici, risultati e
+    metodi](https://search.r-project.org/CRAN/refmans/NbClust/html/NbClust.html).
+-   [DT: tabelle HTML interattive](https://rstudio.github.io/DT/).
+-   [htmlwidgets:
+    saveWidget](https://search.r-project.org/CRAN/refmans/htmlwidgets/html/saveWidget.html).
+-   [Asimmetria type
+    2](https://search.r-project.org/CRAN/refmans/e1071/html/skewness.html).
+-   [Curtosi type
+    2](https://search.r-project.org/CRAN/refmans/e1071/html/kurtosis.html).
+-   [R Markdown:
+    parametri](https://rmarkdown.rstudio.com/lesson-6.html).
+
+```{r ambiente}
+sessionInfo()
+```

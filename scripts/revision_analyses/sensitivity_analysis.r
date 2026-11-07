@@ -2,6 +2,18 @@
 ########## Spatial cluster coherence analysis ############
 ##########################################################
 
+
+library(sf)
+library(tidyverse)
+library(readxl)
+library(pracma)
+library(cluster)
+library(stats)
+library(fpc)
+library(factoextra) 
+library(NbClust)
+library(mclust)
+
 base_path <- '/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering'
 setwd(base_path)
 

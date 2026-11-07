@@ -2,9 +2,7 @@
 ########## Spatial cluster analysis ##########
 ##############################################
 
-base_path <- '/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering'
-output_dir <- "/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/output"
-setwd(base_path)
+setwd("/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering")
 
 library(sf)
 library(tidyverse)
@@ -24,7 +22,7 @@ library(ggpubr)
 # AOI <- "Italy"
 AOI <- "Lombardy"
 
-source("./scripts/original/AuxFuns_NbClust.R", encoding = 'UTF-8')
+source("scripts/original/AuxFuns_NbClust.R", encoding = 'UTF-8')
 
 ### Funzione del kmeans++
 kmpp <- function(X, k) {
@@ -41,10 +39,10 @@ kmpp <- function(X, k) {
 }
 
 ##### DPCM data
-DPCM <- read_excel("./data/DPCM/DPCM_cleaned.xlsx")
+DPCM <- read_excel("data/DPCM/DPCM_cleaned.xlsx")
 
 ##### Municipalities registry
-ManualMatchLAUs <- read_excel("./data/anagrafica_comuni/Manually_matched_LAUs_Oct2023.xlsx", sheet = "Modified")
+ManualMatchLAUs <- read_excel("data/anagrafica_comuni/Manually_matched_LAUs_Oct2023.xlsx", sheet = "Modified")
 ManualMatchLAUs <- ManualMatchLAUs %>%
   mutate(across(c(`Denominazione Comune NEW`), toupper),
          across(c(`Denominazione Comune NEW`), stringr::str_to_title)) %>%
@@ -53,7 +51,7 @@ ManualMatchLAUs <- ManualMatchLAUs %>%
   distinct()
 
 # load("../../Dati/DataManagement/Data transformed/Unnormalized/Data_CrossSection_C2.RData")
-load("./data/anagrafica_comuni/LAU2021_Eurostat_Italy.RData")
+load("data/anagrafica_comuni/LAU2021_Eurostat_Italy.RData")
 
 DPCM_red <- DPCM %>%
   dplyr::rename(LAU_Code = ISTAT_Code_LAU) %>%
@@ -77,6 +75,76 @@ DPCM_red <- DPCM_red %>%
 
 
 DPCM_red <- left_join(x = LAU_IT_sf, y = DPCM_red, by = c("LAU_Code"))
+
+# png("SuspendedDPCM.png", width = 1800, height = 1200, res = 150)
+# DPCM_red %>%
+#   mutate('Share of suspended local units in industry' = Local_Units_Industry_Suspended/Local_Units_Industry_Total*100,
+#          'Share of suspended local units in services' = Local_Units_Services_Suspended/Local_Units_Services_Total*100) %>%
+#   select('Share of suspended local units in industry','Share of suspended local units in services') %>%
+#   pivot_longer(cols = c('Share of suspended local units in industry',
+#                         'Share of suspended local units in services'),
+#                names_to = "Var", values_to = "Values") %>%
+#   ggplot() + 
+#   geom_sf(mapping = aes(fill = Values)) + 
+#   scale_fill_viridis_b(option = "plasma") + 
+#   facet_wrap(~ Var) + 
+#   theme_bw()
+# dev.off()
+# 
+# DPCM_red %>%
+#   filter(NUTS2_Name %in% c("Lombardia")) %>%
+#   select(Local_Units_Industry_Suspended,Local_Units_Services_Suspended) %>%
+#   pivot_longer(cols = c(Local_Units_Industry_Suspended,Local_Units_Services_Suspended),
+#                names_to = "Var", values_to = "Values") %>%
+#   ggplot() + 
+#   geom_sf(mapping = aes(fill = Values)) + 
+#   scale_fill_viridis_b(option = "plasma",n.breaks = 100) + 
+#   facet_wrap(~ Var) + 
+#   theme_bw()
+# 
+# 
+# Data_plot <- DPCM_red %>%
+#   # filter(NUTS2_Name %in% c("Lombardia")) %>%
+#   select(Area_km2,Local_Units_Industry_Suspended,Value_Added_Industry_Suspended,Employed_Industry_Suspended,
+#          Local_Units_Services_Suspended,Value_Added_Services_Suspended,Employed_Services_Suspended) %>%
+#   mutate(across(is.numeric, function(x) x/Area_km2)) %>%
+#   select(-c(Area_km2)) %>%
+#   ### Normalization w.r.t. the maximum
+#   # mutate(across(is.numeric, function(x) x/max(x,na.rm = T))) %>%
+#   ### Min-Max (0,1) normalization
+#   # mutate(across(is.numeric, function(x) (x - min(x,na.rm = T))/(max(x,na.rm = T)-min(x,na.rm = T)))) %>%
+#   ### Robust normalization
+#   mutate(across(is.numeric, function(x) (x - median(x,na.rm = T))/(quantile(x,0.75,na.rm = T)-quantile(x,0.25,na.rm = T)))) %>%
+#   pivot_longer(cols = c(Local_Units_Industry_Suspended,Local_Units_Services_Suspended,
+#                         Value_Added_Industry_Suspended,Value_Added_Services_Suspended,
+#                         Employed_Industry_Suspended,Employed_Services_Suspended),
+#                names_to = "Vars", values_to = "Values") %>%
+#   mutate(
+#     Vars = case_when(
+#       Vars %in% c("Local_Units_Industry_Suspended") ~ "Industry: local units suspended",
+#       Vars %in% c("Value_Added_Industry_Suspended") ~ "Industry: value adde of local units suspended",
+#       Vars %in% c("Employed_Industry_Suspended") ~ "Industry: employed persons suspended",
+#       Vars %in% c("Local_Units_Services_Suspended") ~ "Services: local units suspended",
+#       Vars %in% c("Value_Added_Services_Suspended") ~ "Services: value adde of local units suspended",
+#       Vars %in% c("Employed_Services_Suspended") ~ "Services: employed persons suspended",
+#       TRUE ~ NA_character_
+#     ),
+#     Vars = factor(
+#       Vars,
+#       levels = c("Industry: local units suspended","Industry: value adde of local units suspended",
+#                  "Industry: employed persons suspended","Services: local units suspended",
+#                  "Services: value adde of local units suspended","Services: employed persons suspended"),
+#       labels = c("Industry: local units suspended","Industry: value adde of local units suspended",
+#                  "Industry: employed persons suspended","Services: local units suspended",
+#                  "Services: value adde of local units suspended","Services: employed persons suspended"),
+#       ordered = T)
+#   )
+
+
+
+
+
+
 
 
 
@@ -106,6 +174,14 @@ CData <- DPCM_red %>%
                   -contains("Alt"),
                   -contains("Lon"),-contains("Lat")), function(x) x/Area_km2)) %>%
   select(-c(Area_km2)) %>%
+  ### Normalization w.r.t. the maximum
+  # mutate(across(is.numeric, function(x) x/max(x,na.rm = T))) %>%
+  ### Min-Max (0,1) normalization
+  # mutate(across(is.numeric, function(x) (x - min(x,na.rm = T))/(max(x,na.rm = T)-min(x,na.rm = T)))) %>%
+  ### Standardization
+  # mutate(across(c(is.numeric,
+  #                 -contains("Lon"),-contains("Lat")), function(x) scale(x)[,1]))
+  ### Robust normalization
   mutate(across(c(is.numeric,
                   -contains("Lon"),-contains("Lat")), function(x) (x - median(x,na.rm = T))/(quantile(x,0.75,na.rm = T)-quantile(x,0.25,na.rm = T))))
 
@@ -194,6 +270,83 @@ p_corr <- corrmat %>%
   labs(title = "Linear correlation among DPCM-related variables")
 ggexport(p_corr,width = 2400, height = 2000, res = 150, filename = "CorrMat.png")
 
+
+
+
+
+
+
+
+
+# ##### Distance
+# st_geometry(CData) <- NULL
+# Xmat_geo <- as.matrix(CData[,2:3])
+# Xmat_nogeo <- as.matrix(CData[,-c(1:6)])
+# 
+# ##### Distance matrix among units: socio-economic variables
+# DMat <- get_dist(Xmat_nogeo,method = "euclidean",stand = FALSE)
+# f1 <- fviz_dist(DMat, gradient = list(low="white", mid="grey", high="black"),show_labels = F)
+# ggexport(f1,width = 2400, height = 2000, res = 150, filename = "D0_mat.png")
+# DMat_geo <- get_dist(Xmat_geo)
+# f2 <- fviz_dist(DMat_geo, gradient = list(low="white", mid="grey", high="black"),show_labels = F)
+# ggexport(f2,width = 2400, height = 2000, res = 150, filename = "D1_mat.png")
+# 
+# # AvgDist_D0 <- rowMeans(as.matrix(DMat))
+# # DMat_geo_k2 <- mgcv::slanczos(A = as.matrix(DMat_geo),k = 2)
+# # Xmat_full <- cbind(DMat_geo_k2$vectors,Xmat_nogeo)
+# # DMat_full <- get_dist(Xmat_full)
+# 
+# 
+# ########## Not spatially-informed K-means++ 
+# clustering <- list()
+# clust <- seq(from=2,to=2)
+# indexes <- matrix(NA,length(clust),3)
+# set.seed(12345)
+# 
+# for (cl in 1:length(clust)){
+#   cat(paste0("Cluster ",cl," of ",length(clust),"\n"))
+#   clustering[[cl]] <- kmpp(X = Xmat_nogeo, k = clust[cl])
+#   stats <- cluster.stats(DMat, clustering[[cl]]$cl)
+#   indexes[cl,] <- c(stats$avg.silwidth, stats$pearsongamma,stats$within.cluster.ss)
+# }
+# # Performance indices
+# colnames(indexes) <- c("ASW", "PG","WSS")
+# rownames(indexes) <- paste0("cl = ",clust)
+# indexes
+# # Plot
+# win.graph()
+# par(mfrow = c(3,1))
+# plot(clust,indexes[,1], type = "b")
+# plot(clust,indexes[,2], type = "b")
+# plot(clust,indexes[,3], type = "b")
+# par(mfrow = c(3,1))
+# 
+# 
+# 
+# 
+# ########## Spatially-informed K-means++ 
+# clustering_sp <- list()
+# clust_sp <- seq(from=2,to=30)
+# indexes_sp <- matrix(NA,length(clust),3)
+# set.seed(12345)
+# 
+# for (cl in 1:length(clust_sp)){
+#   cat(paste0("Cluster ",cl," of ",length(clust_sp),"\n"))
+#   clustering_sp[[cl]] <- kmpp(X = Xmat_full, k = clust_sp[cl])
+#   stats_sp <- cluster.stats(DMat_full, clustering_sp[[cl]]$cl)
+#   indexes_sp[cl,] <- c(stats_sp$avg.silwidth, stats_sp$pearsongamma,stats_sp$within.cluster.ss)
+# }
+# # Performance indices
+# colnames(indexes_sp) <- c("ASW", "PG","WSS")
+# rownames(indexes_sp) <- paste0("cl = ",clust)
+# indexes
+# # Plot
+# win.graph()
+# par(mfrow = c(3,1))
+# plot(clust_sp,indexes_sp[,1], type = "b")
+# plot(clust_sp,indexes_sp[,2], type = "b")
+# plot(clust_sp,indexes_sp[,3], type = "b")
+# par(mfrow = c(3,1))
 
 
 
@@ -306,7 +459,7 @@ colnames(indexes) <- c("ASW", "PG","WSS","CH","Dunn")
 rownames(indexes) <- paste0("cl = ",clust)
 indexes
 # Plot
-# win.graph()
+# win.graph()
 par(mfrow = c(2,3))
 plot(clust,indexes[,1], type = "b") ; which.max(abs(diff(indexes[,1])))
 plot(clust,indexes[,2], type = "b") ; which.max(abs(diff(indexes[,2])))
@@ -333,41 +486,32 @@ if (Estim_alpha == TRUE) {
   cr8 <- choicealpha(D0_std, D1_std, range.alpha=seq(0, 1, 0.1), K=8, graph=TRUE) # alpha = 0.10
   cr9 <- choicealpha(D0_std, D1_std, range.alpha=seq(0, 1, 0.1), K=9, graph=TRUE) # alpha = 0.10
   cr10 <- choicealpha(D0_std, D1_std, range.alpha=seq(0, 1, 0.1), K=10, graph=TRUE) # alpha = 0.10
-  #save(cr1,cr2,cr3,cr4,cr5,cr6,cr7,cr8,cr9,cr10,D0,D1,D0_std,D1_std,
-  #     file = file.path(output_dir, "Res_Nat_AlphaGivenK.RData"))
-  
-  #save(cr1,cr2,cr3,D0,D1,D0_std,D1_std,
-  #     file = file.path(output_dir, "Res_Nat_AlphaGivenK.RData"))
+  save(cr1,cr2,cr3,cr4,cr5,cr6,cr7,cr8,cr9,cr10,D0,D1,D0_std,D1_std,
+       file = "/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/output/Res_Nat_AlphaGivenK_NEW.RData")
 } else {
-  load(file.path(output_dir, "Res_Nat_AlphaGivenK.RData"))
+  # load('/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/output/Res_Nat_AlphaGivenK.RData')
 }
 
 
-plot(cr2$Qnorm[,2] - cr2$Qnorm[,1])
+plot(cr8$Qnorm[,2] - cr8$Qnorm[,1])
 
-test <- FALSE 
+cr1_Q0 <- cbind(cr1$Q[,1],cr1$Qnorm[,1])
+cr2_Q0 <- cbind(cr2$Q[,1],cr2$Qnorm[,1])
+cr3_Q0 <- cbind(cr3$Q[,1],cr3$Qnorm[,1])
+cr4_Q0 <- cbind(cr4$Q[,1],cr4$Qnorm[,1])
+cr5_Q0 <- cbind(cr5$Q[,1],cr5$Qnorm[,1])
+cr6_Q0 <- cbind(cr6$Q[,1],cr6$Qnorm[,1])
+cr7_Q0 <- cbind(cr7$Q[,1],cr7$Qnorm[,1])
 
-if (test == FALSE) {
-  cr1_Q0 <- cbind(cr1$Q[,1],cr1$Qnorm[,1])
-  cr2_Q0 <- cbind(cr2$Q[,1],cr2$Qnorm[,1])
-  cr3_Q0 <- cbind(cr3$Q[,1],cr3$Qnorm[,1])
-  cr4_Q0 <- cbind(cr4$Q[,1],cr4$Qnorm[,1])
-  cr5_Q0 <- cbind(cr5$Q[,1],cr5$Qnorm[,1])
-  cr6_Q0 <- cbind(cr6$Q[,1],cr6$Qnorm[,1])
-  cr7_Q0 <- cbind(cr7$Q[,1],cr7$Qnorm[,1])
-  cr8_Q0 <- cbind(cr8$Q[,1],cr8$Qnorm[,1])
-  cr9_Q0 <- cbind(cr9$Q[,1],cr9$Qnorm[,1])
-  cr10_Q0 <- cbind(cr10$Q[,1],cr10$Qnorm[,1])
-  cr_out <- rbind(cr1_Q0[1,],cr2_Q0[1,],cr3_Q0[1,],cr4_Q0[1,],cr5_Q0[1,],
-                  cr6_Q0[1,],cr7_Q0[1,],cr8_Q0[1,],cr9_Q0[1,],cr10_Q0[1,])
-  
-  cr_out
-} else {
-  cr1_Q0 <- cbind(cr1$Q[,1],cr1$Qnorm[,1])
-  cr2_Q0 <- cbind(cr2$Q[,1],cr2$Qnorm[,1])
-  cr3_Q0 <- cbind(cr3$Q[,1],cr3$Qnorm[,1])
-  cr_out <- rbind(cr1_Q0[1,],cr2_Q0[1,],cr3_Q0[1,])
-}
+cr8 <- choicealpha(D0_std, D1_std, range.alpha=seq(0, 1, 0.1), K=8, graph=TRUE)
+cr8_Q0 <- cbind(cr8$Q[,1],cr8$Qnorm[,1])
+
+cr9_Q0 <- cbind(cr9$Q[,1],cr9$Qnorm[,1])
+cr10_Q0 <- cbind(cr10$Q[,1],cr10$Qnorm[,1])
+cr_out <- rbind(cr1_Q0[1,],cr2_Q0[1,],cr3_Q0[1,],cr4_Q0[1,],cr5_Q0[1,],
+                cr6_Q0[1,],cr7_Q0[1,],cr8_Q0[1,],cr9_Q0[1,],cr10_Q0[1,])
+
+cr_out
 
 diff(cr_out)
 
@@ -379,14 +523,14 @@ plot(Cl_D0$All.index[,"CH"], type = "b")
 
 ##### Ward-like hierarchical clustering with spatial information
 # D1_std <- D1/max(D1)
-treeD0D1 <- hclustgeo(D0, D1, alpha=0.02, wt = rep(1/n, n))
+treeD0D1 <- hclustgeo(D0, D1, alpha=0.1, wt = rep(1/n, n))
 
 cols <- c("Q0" = "#CC0000",
           "Q1" = "#3399FF",
           "Q0norm" = "#FF9933",
           "Q1norm" = "#0000FF")
 
-kopt <- 3
+kopt <- 8
 cr8_out <- as.data.frame(cr8$Q)
 cr8_out$Q0norm <- cr8$Qnorm[,1]
 cr8_out$Q1norm <- cr8$Qnorm[,2]
@@ -561,50 +705,51 @@ Regione <- Data_clusters %>%
 Data_clusters <- bind_rows(Data_clusters,Regione)
 
 ##### Labelling clusters
-# Data_clusters <- Data_clusters %>%
-#   mutate(
-#     Cluster8_Geo = case_when(D0D1_P8 == 1 ~ "Rural Pavia and South-West",
-#                              D0D1_P8 == 2 ~ "Southern agro Milano, Lodi and Cremona",
-#                              D0D1_P8 == 3 ~ "Varese, Lecco e Como",
-#                              D0D1_P8 == 4 ~ "Large cities and urban areas",
-#                              D0D1_P8 == 5 ~ "Cities of Brescia and San Donato",
-#                              D0D1_P8 == 6 ~ "Rural Bergamo and Brescia",
-#                              D0D1_P8 == 7 ~ "Alpine Sondrio, Brescia and Bergamo",
-#                              D0D1_P8 == 8 ~ "Southern Brescia and Mantova",
-#                              D0D1_P8 == 9 ~ "Milano",
-#                              D0D1_P8 == 10 ~ "Regional median"),
-#     Cluster8_NoGeo = case_when(D0_P8 == 1 ~ "Low density rural areas",
-#                                D0_P8 == 2 ~ "High density rural areas",
-#                                D0_P8 == 3 ~ "Milano suburban areas",
-#                                D0_P8 == 4 ~ "City of San Donato Milanese",
-#                                D0_P8 == 5 ~ "Cities of Segrate and Assago",
-#                                D0_P8 == 6 ~ "Sparse urban areas and cities",
-#                                D0_P8 == 7 ~ "Cities of Bergamo, Monza and Como",
-#                                D0_P8 == 8 ~ "City of Brescia",
-#                                D0_P8 == 9 ~ "Milano",
-#                                D0_P8 == 10 ~ "Regional median")
-#   )
 Data_clusters <- Data_clusters %>%
-  mutate(
-    Cluster8_Geo = case_when(D0D1_P8 == 1 ~ "South and Sicily",
-                             D0D1_P8 == 2 ~ "Piemonte and western Liguria",
-                             D0D1_P8 == 3 ~ "Center-South",
-                             D0D1_P8 == 4 ~ "Triveneto",
-                             D0D1_P8 == 5 ~ "Lombardy and Emilia",
-                             D0D1_P8 == 6 ~ "Center",
-                             D0D1_P8 == 7 ~ "Large urban centers",
-                             D0D1_P8 == 8 ~ "Sardinia",
-                             D0D1_P8 == 10 ~ "National median"),
-        Cluster8_NoGeo = case_when(D0_P8 == 1 ~ "Low density municipalities",
-                                   D0_P8 == 2 ~ "High density urban centers (sparse)",
-                                   D0_P8 == 3 ~ "Low density urban centers (sparse)",
-                                   D0_P8 == 4 ~ "High density municipalities (sparse)",
-                                   D0_P8 == 5 ~ "Milano hinterland and Torino and Napoli",
-                                   D0_P8 == 6 ~ "City of San Donato Milanese",
-                                   D0_P8 == 7 ~ "Large urban centers (sparse)",
-                                   D0_P8 == 8 ~ "Cities of Milano and Assago",
-                                   D0_P8 == 10 ~ "National median")
-  )
+   mutate(
+     Cluster8_Geo = case_when(D0D1_P8 == 1 ~ "Rural Pavia and South-West",
+                              D0D1_P8 == 2 ~ "Southern agro Milano, Lodi and Cremona",
+                              D0D1_P8 == 3 ~ "Varese, Lecco e Como",
+                              D0D1_P8 == 4 ~ "Large cities and urban areas",
+                              D0D1_P8 == 5 ~ "Cities of Brescia and San Donato",
+                              D0D1_P8 == 6 ~ "Rural Bergamo and Brescia",
+                              D0D1_P8 == 7 ~ "Alpine Sondrio, Brescia and Bergamo",
+                              D0D1_P8 == 8 ~ "Southern Brescia and Mantova",
+                              D0D1_P8 == 9 ~ "Milano",
+                              D0D1_P8 == 10 ~ "Regional median"),
+     Cluster8_NoGeo = case_when(D0_P8 == 1 ~ "Low density rural areas",
+                                D0_P8 == 2 ~ "High density rural areas",
+                                D0_P8 == 3 ~ "Milano suburban areas",
+                                D0_P8 == 4 ~ "City of San Donato Milanese",
+                                D0_P8 == 5 ~ "Cities of Segrate and Assago",
+                                D0_P8 == 6 ~ "Sparse urban areas and cities",
+                                D0_P8 == 7 ~ "Cities of Bergamo, Monza and Como",
+                                D0_P8 == 8 ~ "City of Brescia",
+                                D0_P8 == 9 ~ "Milano",
+                                D0_P8 == 10 ~ "Regional median")
+   )
+
+#Data_clusters <- Data_clusters %>%
+#  mutate(
+#    Cluster8_Geo = case_when(D0D1_P8 == 1 ~ "South and Sicily",
+#                             D0D1_P8 == 2 ~ "Piemonte and western Liguria",
+#                             D0D1_P8 == 3 ~ "Center-South",
+#                             D0D1_P8 == 4 ~ "Triveneto",
+#                             D0D1_P8 == 5 ~ "Lombardy and Emilia",
+#                             D0D1_P8 == 6 ~ "Center",
+#                             D0D1_P8 == 7 ~ "Large urban centers",
+#                             D0D1_P8 == 8 ~ "Sardinia",
+#                             D0D1_P8 == 10 ~ "National median"),
+#        Cluster8_NoGeo = case_when(D0_P8 == 1 ~ "Low density municipalities",
+#                                   D0_P8 == 2 ~ "High density urban centers (sparse)",
+#                                   D0_P8 == 3 ~ "Low density urban centers (sparse)",
+#                                   D0_P8 == 4 ~ "High density municipalities (sparse)",
+#                                   D0_P8 == 5 ~ "Milano hinterland and Torino and Napoli",
+#                                   D0_P8 == 6 ~ "City of San Donato Milanese",
+#                                   D0_P8 == 7 ~ "Large urban centers (sparse)",
+#                                   D0_P8 == 8 ~ "Cities of Milano and Assago",
+#                                   D0_P8 == 10 ~ "National median")
+#  )
 
 
 Data_clusters %>%
@@ -639,52 +784,55 @@ Data_clusters %>%
   View(title = "No geo")
 
 
-# ##### Colors
-# colp <- c(
-#   "Alpine Sondrio, Brescia and Bergamo" = "#996633",
-#   "Rural Pavia and South-West" = "#FF9900",
-#   "Varese, Lecco e Como" = "#CC0000",
-#   "Cities of Brescia and San Donato" = "#0000FF",
-#   "Large cities and urban areas" = "#3399FF",
-#   "Rural Bergamo and Brescia"  = "#FFCC33",
-#   "Milano" = "#333333",
-#   "Southern agro Milano, Lodi and Cremona" = "#66CC33",
-#   "Southern Brescia and Mantova" = "#339900",
-#   
-#   "Low density rural areas" = "#996633",
-#   "City of San Donato Milanese" = "#FF9900",
-#   "Cities of Bergamo, Monza and Como" = "#CC0000",
-#   "City of Brescia" = "#0000FF",
-#   "Sparse urban areas and cities" = "#3399FF",
-#   "Cities of Segrate and Assago"  = "#FFCC33",
-#   "Milano" = "#333333",
-#   "Milano suburban areas" = "#66CC33",
-#   "High density rural areas" = "#339900"
-# )
-
 ##### Colors
+
+# ##### Colors
 colp <- c(
-  "South and Sicily" = "#996633",
-  "Piemonte and western Liguria" = "#FF9900",
-  "Center-South" = "#CC0000",
-  "Triveneto" = "#0000FF",
-  "Lombardy and Emilia" = "#3399FF",
-  "Center"  = "#FFCC33",
-  "Large urban centers" = "#333333",
-  "Sardinia" = "#66CC33",
+  "Alpine Sondrio, Brescia and Bergamo" = "#996633",
+  "Rural Pavia and South-West" = "#FF9900",
+  "Varese, Lecco e Como" = "#CC0000",
+  "Cities of Brescia and San Donato" = "#0000FF",
+  "Large cities and urban areas" = "#3399FF",
+  "Rural Bergamo and Brescia"  = "#FFCC33",
+  "Milano" = "#333333",
+  "Southern agro Milano, Lodi and Cremona" = "#66CC33",
+  "Southern Brescia and Mantova" = "#339900",
   
-  "Low density municipalities" = "#996633",
-  "High density urban centers (sparse)" = "#FF9900",
-  "Low density urban centers (sparse)" = "#CC0000",
-  "High density municipalities (sparse)" = "#0000FF",
-  "Milano hinterland and Torino and Napoli" = "#3399FF",
-  "City of San Donato Milanese"  = "#FFCC33",
-  "Large urban centers (sparse)" = "#333333",
-  "Cities of Milano and Assago" = "#66CC33"
+  "Low density rural areas" = "#996633",
+  "City of San Donato Milanese" = "#FF9900",
+  "Cities of Bergamo, Monza and Como" = "#CC0000",
+  "City of Brescia" = "#0000FF",
+  "Sparse urban areas and cities" = "#3399FF",
+  "Cities of Segrate and Assago"  = "#FFCC33",
+  "Milano" = "#333333",
+  "Milano suburban areas" = "#66CC33",
+  "High density rural areas" = "#339900"
 )
 
+#colp <- c(
+#  "South and Sicily" = "#996633",
+#  "Piemonte and western Liguria" = "#FF9900",
+#  "Center-South" = "#CC0000",
+#  "Triveneto" = "#0000FF",
+#  "Lombardy and Emilia" = "#3399FF",
+#  "Center"  = "#FFCC33",
+#  "Large urban centers" = "#333333",
+#  "Sardinia" = "#66CC33",
+  
+#  "Low density municipalities" = "#996633",
+#  "High density urban centers (sparse)" = "#FF9900",
+#  "Low density urban centers (sparse)" = "#CC0000",
+#  "High density municipalities (sparse)" = "#0000FF",
+#  "Milano hinterland and Torino and Napoli" = "#3399FF",
+#  "City of San Donato Milanese"  = "#FFCC33",
+#  "Large urban centers (sparse)" = "#333333",
+#  "Cities of Milano and Assago" = "#66CC33"
+#)
+
 p1 <- Data_clusters %>%
-  select(Cluster8_Geo,D0D1_P8) %>%
+  select(# Cluster8_NoGeo,
+         Cluster8_Geo,
+         D0D1_P8) %>%
   mutate(Cluster8_Geo = as.factor(Cluster8_Geo)) %>%
   filter(Cluster8_Geo %notin% c("National median")) %>%
   ggplot() + 

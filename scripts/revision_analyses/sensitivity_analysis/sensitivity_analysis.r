@@ -66,7 +66,7 @@ print(ari_results)
 
 
 
-ggplot(ari_results, aes(x = factor(Alpha), y = factor(K), fill = ARI)) +
+p_heatmap <- ggplot(ari_results, aes(x = factor(Alpha), y = factor(K), fill = ARI)) +
   geom_tile(colour = "white", linewidth = 0.35) +
   geom_text(aes(
     label = sprintf("%.2f", ARI), 
@@ -80,6 +80,7 @@ ggplot(ari_results, aes(x = factor(Alpha), y = factor(K), fill = ARI)) +
   coord_equal() +
   labs(
     title = "Clustering Sensitivity to Nearby K and Alpha",
+    subtitle = "Comparisons to baseline K=8",
     x = "Mixing Parameter (Alpha)",
     y = "Number of Clusters (K)"
   ) +
@@ -93,7 +94,7 @@ ggplot(ari_results, aes(x = factor(Alpha), y = factor(K), fill = ARI)) +
 
 
 # 3. Save the plots
-ggsave(file.path(output_dir, "ARI_compare_heatmap.png"),
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/sensitivity_analysis_SENZA_MILANO", "ARI_compare_heatmap.png"),
        p_heatmap, width = 10, height = 12, dpi = 160, bg = "white")
-ggsave(file.path(output_dir, "ARI_compare_heatmap.pdf"),
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/sensitivity_analysis_SENZA_MILANO", "ARI_compare_heatmap.pdf"),
        p_heatmap, width = 10, height = 12)

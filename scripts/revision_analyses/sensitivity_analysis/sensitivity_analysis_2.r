@@ -71,6 +71,7 @@ p_heatmap <- ggplot(dati_heatmap, aes(x = Statistic, y = K_factor, fill = Value)
   coord_equal() +
   labs(
     title = "ARI Summary Statistics by K",
+    subtitle = "Comparisons among alpha values between 0 and 1, step size 0.1",
     x = "Summary Statistic", 
     y = "K"
   ) +
@@ -85,7 +86,7 @@ p_heatmap <- ggplot(dati_heatmap, aes(x = Statistic, y = K_factor, fill = Value)
 p_heatmap
 
 # 3. Save the plots
-ggsave(file.path(output_dir, "ARI_summary_heatmap.png"),
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/sensitivity_analysis_SENZA_MILANO", "ARI_summary_heatmap.png"),
        p_heatmap, width = 10, height = 12, dpi = 160, bg = "white")
-ggsave(file.path(output_dir, "ARI_summary_heatmap.pdf"),
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/sensitivity_analysis_SENZA_MILANO", "ARI_summary_heatmap.pdf"),
        p_heatmap, width = 10, height = 12)

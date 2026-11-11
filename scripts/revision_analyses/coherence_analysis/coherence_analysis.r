@@ -47,3 +47,30 @@ summary(distances_no_geo)
 sd(distances_geo)
 sd(distances_no_geo)
 
+
+
+
+# Compile statistics into a single dataframe
+summary_table <- data.frame(
+  Model = c("Alpha = 0 (No Spatial Constraint)", "Alpha = 0.1 (With Spatial Constraint)"),
+  Min = c(min(distances_no_geo[distances_no_geo > 0]), min(distances_geo[distances_geo > 0])),
+  Q1 = c(quantile(distances_no_geo, 0.25), quantile(distances_geo, 0.25)),
+  Median = c(median(distances_no_geo), median(distances_geo)),
+  Mean = c(mean(distances_no_geo), mean(distances_geo)),
+  Q3 = c(quantile(distances_no_geo, 0.75), quantile(distances_geo, 0.75)),
+  Max = c(max(distances_no_geo), max(distances_geo)),
+  SD = c(sd(distances_no_geo), sd(distances_geo))
+)
+
+# Convert from meters (EPSG: 32632) to kilometers for readability
+summary_table_km <- summary_table %>%
+  mutate(across(where(is.numeric), ~ .x / 1000))
+
+# Generate a clean Markdown table ready for copy-pasting
+knitr::kable(
+  summary_table_km, 
+  digits = 2, 
+  col.names = c("Model", "Min (km)", "Q1 (km)", "Median (km)", "Mean (km)", "Q3 (km)", "Max (km)", "SD (km)"),
+  caption = "Spatial Cluster Coherence: Intra-cluster Distances"
+)
+

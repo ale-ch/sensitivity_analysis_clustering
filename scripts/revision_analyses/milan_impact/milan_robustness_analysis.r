@@ -10,6 +10,8 @@ library(purrr)
 library(ggplot2)
 library(tidyr)
 
+setwd("/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering/")
+
 # --- 1. SETTINGS & PARAMETERS ---
 AOI <- "Lombardy"
 # Ensure variabili_clustering is defined, e.g.:
@@ -138,7 +140,7 @@ p_ari_heatmap <- ggplot(dati_heatmap_ari, aes(x = Alpha_factor, y = K_factor, fi
   ) +
   coord_equal() +
   labs(
-    title = "ARI: With vs. Without Milan",
+    title = "ARI: With vs. Without Milan (Lombardy)",
     subtitle = "Stability of partitions across K and Alpha",
     x = "Alpha",
     y = "Number of Clusters (K)"
@@ -153,3 +155,8 @@ p_ari_heatmap <- ggplot(dati_heatmap_ari, aes(x = Alpha_factor, y = K_factor, fi
   )
 
 p_ari_heatmap
+
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/milan_clustering", "ARI_milan.png"),
+       p_ari_heatmap, width = 14, height = 7.5, dpi = 200, bg = "white")
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/milan_clustering", "ARI_milan.pdf"),
+       p_ari_heatmap, width = 14, height = 7.5)

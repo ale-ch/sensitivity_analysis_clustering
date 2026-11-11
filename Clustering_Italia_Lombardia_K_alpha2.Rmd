@@ -18,9 +18,9 @@ params:
   K_max: 15
   K0_manuale: 8
   K_finale_manuale: 8
-  scelta_alpha: "manuale"
+  scelta_alpha: "automatico"
   criterio_alpha: "paper_assoluto"
-  alpha_step: 0.01
+  alpha_step: 0.001
   alpha_manuale: 0.1
   palette_mappe: "sobria"
   salva_distanze: true
@@ -38,7 +38,7 @@ dati restano quelli letti dallo script originale; non servono i
 precedenti CSV armonizzati.
 
 | Parametro | Significato |
-|:-----------------------------------|:-----------------------------------|
+|:---|:---|
 | `area` | `Italia` oppure `Lombardia`. |
 | `includi_milano` | Per la Lombardia: `true` include Milano nella stima; `false` lo esclude prima della standardizzazione. In Italia Milano e incluso. |
 | `scelta_K` | `automatico`: proposta di gomito riproducibile, da verificare sui dendrogrammi; `manuale`: usa K0 e K finale indicati sotto. |
@@ -110,7 +110,7 @@ Riferimento: file allegati `main.tex` e
 (Sezione 6).
 
 | Ambito | Valori riportati nei Results | Interpretazione |
-|:-----------------------|:-----------------------|:-----------------------|
+|:---|:---|:---|
 | Lombardia senza Milano | K=8; alpha=0 per il non spaziale, alpha=0.10 per lo spaziale. | Risultati del paper, da distinguere dalla nuova selezione sui dati dello script. |
 | Italia | alpha=0.02; confronti a K=3, 8 e 15. | Il testo precisa che i tre K sono esplorativi/comparativi, non il risultato di un unico criterio statistico di arresto (p. 26). |
 | Lombardia con Milano | Nessuna coppia selezionata dichiarata nel paper. | Va ricalcolata; i valori senza Milano non sono automaticamente trasferibili. |
@@ -141,7 +141,7 @@ Questo riscontro riguarda gli oggetti gia salvati negli RData, non un
 nuovo run. L'inventario strutturale disponibile riporta:
 
 | Workspace | Righe di Xmat_nogeo | Colonne economiche | Comuni distinti nel fit | Righe in eccesso |
-|:--------------|--------------:|--------------:|--------------:|--------------:|
+|:---|---:|---:|---:|---:|
 | Res_national_11082024.RData | 1523 | 20 | 1506 | 17 |
 | res1911.RData | 1522 | 20 | 1505 | 17 |
 
@@ -2319,7 +2319,7 @@ nomi storici sono mantenuti anche quando l'area scelta e la Lombardia:
 oggetti `hclust` prodotti da ClustGeo in R.
 
 | Output | Contenuto |
-|:-----------------------------------|:-----------------------------------|
+|:---|:---|
 | `Selezione_K_alpha.csv` e `Scelta_finale.txt` | K0, alpha scelto a K0, K finale e modalita effettive; e la risposta numerica prodotta dal run. |
 | `Passaggi_selezione.csv` | Decisioni dei tre passaggi e proposte automatiche, anche in modalita manuale. |
 | `Diagnostica_K0.csv`, `Diagnostica_K_finale.csv` | Inerzie economiche, geografiche, miste e punteggi del gomito per ogni K. |
@@ -2652,7 +2652,7 @@ la conferma numerica richiede l'esecuzione in R sullo stesso ambiente e
 sugli stessi file.
 
 | Parte | Trattamento in questo documento |
-|:-----------------------------------|:-----------------------------------|
+|:---|:---|
 | Lettura DPCM, tabella manuale e anagrafica | Stesse istruzioni e stessi percorsi relativi. |
 | Ricodifica dei comuni e somma per codice | Stesso ciclo e stesso `group_by` con `mutate`, seguito dal nuovo filtro delle copie per codice. |
 | Variabili di clustering | Solo Local_Units, Value_Added ed Employed: 12 colonne esplicite. Revenues e Workers esclusi da D0. |

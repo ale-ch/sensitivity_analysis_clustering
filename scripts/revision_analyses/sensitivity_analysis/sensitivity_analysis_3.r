@@ -92,8 +92,8 @@ p_choice_all_K <- ggplot(dati_curve_long,
   scale_linetype_manual(values = c("Q0" = "dotted", "Q1" = "solid", 
                                    "Q0norm" = "dotted", "Q1norm" = "solid")) +
   labs(
-    title = paste("Spatial hierarchical clustering - All K -", params$area),
-    x = "alpha", 
+    title = paste("Explained pseudo-inertia curves, by value of K - Lombardy"),
+    x = "Alpha", 
     y = "% of explained pseudo inertia", 
     colour = "Number of Clusters (K)",
     linetype = "Statistic"
@@ -106,3 +106,62 @@ p_choice_all_K <- ggplot(dati_curve_long,
   )
 
 p_choice_all_K
+
+
+
+
+
+
+##############
+
+# Calculate summary lines (mean of each statistic across all K values at each alpha)
+dati_summary <- dati_curve_long %>%
+  group_by(alpha, Stat, Grp) %>%
+  summarise(Value = mean(Value, na.rm = TRUE), .groups = "drop")
+
+# Generate the plot
+p_choice_all_K <- ggplot() +
+  # Individual K curves (slightly transparent so the summary lines stand out)
+  geom_line(data = dati_curve_long, 
+            aes(x = alpha, y = Value, 
+                colour = K_factor, 
+                linetype = Stat, 
+                group = interaction(Stat, K_factor)),
+            linewidth = 0.5, alpha = 0.6) + 
+  # Summary curves (thicker, black)
+  geom_line(data = dati_summary, 
+            aes(x = alpha, y = Value, linetype = Stat, group = Stat),
+            colour = "blue", linewidth = 1.2) +
+  # Stack facets vertically to fix horizontal squishing
+  facet_wrap(~ Grp, scales = "free_y", ncol = 1) +
+  geom_vline(data = mean_intersezioni, aes(xintercept = mean_alpha), 
+             colour = "red", linetype = "dashed", linewidth = 0.8) +
+  geom_text(data = mean_intersezioni, 
+            aes(x = mean_alpha, y = Inf, label = sprintf("Mean optimal α = %.3f", mean_alpha)),
+            colour = "red", vjust = 2, hjust = -0.1, 
+            inherit.aes = FALSE, size = 3.5, fontface = "bold") +
+  scale_colour_manual(values = pastello) +
+  scale_linetype_manual(values = c("Q0" = "dotted", "Q1" = "solid", 
+                                   "Q0norm" = "dotted", "Q1norm" = "solid")) +
+  labs(
+    title = paste("Explained pseudo-inertia curves, by value of K - Lombardy"),
+    x = "Alpha", 
+    y = "% of explained pseudo inertia", 
+    colour = "Number of Clusters (K)",
+    linetype = "Statistic"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    legend.position = "right",
+    strip.text = element_text(face = "bold", colour = "#183746"),
+    plot.title = element_text(face = "bold", colour = "#183746")
+  )
+
+p_choice_all_K
+
+
+# 3. Save the plots
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/sensitivity_analysis_SENZA_MILANO", "pseudoinertia_curves.png"),
+       p_choice_all_K, width = 10, height = 12, dpi = 160, bg = "white")
+ggsave(file.path("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/reply/sensitivity_analysis_SENZA_MILANO", "pseudoinertia_curves.pdf"),
+       p_choice_all_K, width = 10, height = 12)

@@ -1,4 +1,7 @@
-load('/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/Output_Selezione_K_alpha_RMarkdown/Lombardia_senza_Milano_20261107_104128/env/Res_national_11082024.RData')
+library(tidyverse)
+
+# load('/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/Output_Selezione_K_alpha_RMarkdown/Lombardia_senza_Milano_20261107_104128/env/Res_national_11082024.RData')
+load("/Volumes/T7 Shield/FRES/work/sensitivity_analysis_clustering/Output_Selezione_K_alpha_RMarkdown/Lombardia_senza_Milano_20261109_164347/env/Res_national_11082024.RData")
 
 etichette_ARI_stabilita <- c("α = 0",
                              paste0("optimum α = ", format(alpha_ottimo, digits = 6)))

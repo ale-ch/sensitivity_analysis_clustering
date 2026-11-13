@@ -22,11 +22,11 @@ source("scripts/utils/make_dataset.r")
 
 
 # Define baseline parameters based on text
-k_opt <- 8
-alpha_opt <- 0.10
+k_opt <- 5
+alpha_opt <- 0.067
 
 # Define nearby parameter spaces
-alphas_nearby <- c(0.04, 0.06, 0.08, 0.10, 0.12, 0.14, 0.16)
+alphas_nearby <- c(0.04, 0.067, 0.08, 0.10, 0.12, 0.14, 0.16)
 ks_nearby <- c(k_opt - 2, k_opt - 1, k_opt, k_opt + 1, k_opt + 2)
 
 # Generate baseline partition
@@ -68,10 +68,14 @@ print(ari_results)
 
 p_heatmap <- ggplot(ari_results, aes(x = factor(Alpha), y = factor(K), fill = ARI)) +
   geom_tile(colour = "white", linewidth = 0.35) +
+  # Add a distinct border to highlight the baseline reference cell
+  geom_tile(data = subset(ari_results, Alpha == 0.067 & K == 5),
+            fill = NA, colour = "black", linewidth = 0.8) +
   geom_text(aes(
     label = sprintf("%.2f", ARI), 
-    colour = ifelse(ARI > 0.65, "white", "#243746")
-  ), size = 3) +
+    colour = ifelse(ARI > 0.65, "white", "#243746"),
+    fontface = ifelse(Alpha == 0.067 & K == 5, "bold", "plain")
+  ), size = 3.5) +
   scale_colour_identity() +
   scale_fill_gradient2(
     low = "#B97572", mid = "#F3F2EF", high = "#365F7C",
@@ -80,17 +84,21 @@ p_heatmap <- ggplot(ari_results, aes(x = factor(Alpha), y = factor(K), fill = AR
   coord_equal() +
   labs(
     title = "Clustering Sensitivity to Nearby K and Alpha",
-    subtitle = "Comparisons to baseline K=8",
-    x = "Mixing Parameter (Alpha)",
-    y = "Number of Clusters (K)"
+    subtitle = expression(paste("Comparisons to baseline partition: ", italic("K"), " = 5, ", alpha, " = 0.067")),
+    x = expression(paste("Mixing Parameter (", alpha, ")")),
+    y = expression(paste("Number of Clusters (", italic("K"), ")"))
   ) +
-  theme_minimal(base_size = 10) +
+  theme_minimal(base_size = 11) +
   theme(
     panel.grid = element_blank(), 
     legend.position = "bottom",
+    legend.key.width = unit(1.5, "cm"),
     axis.text.x = element_text(angle = 45, hjust = 1),
-    plot.title = element_text(face = "bold", colour = "#183746")
+    plot.title = element_text(face = "bold", colour = "#183746"),
+    plot.subtitle = element_text(colour = "#4A5D68", margin = margin(b = 10))
   )
+
+p_heatmap
 
 
 # 3. Save the plots

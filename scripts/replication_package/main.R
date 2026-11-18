@@ -22,10 +22,10 @@ params$save_distances <- TRUE
 base_path <- "/Volumes/T7 Shield/FRES/repos/sensitivity_analysis_clustering"
 data_path <- file.path(base_path, "data")
 
-source(file.path(base_path, "scripts/replication_package/env_preparation.R"))
-source(file.path(base_path, "scripts/replication_package/data_preparation.R"))
-source(file.path(base_path, "scripts/replication_package/params_optim.R"))
-source(file.path(base_path, "scripts/replication_package/plots_setup.R"))
+source(file.path(base_path, "scripts/replication_package/01_env_preparation.R"))
+source(file.path(base_path, "scripts/replication_package/02_data_preparation.R"))
+source(file.path(base_path, "scripts/replication_package/03_params_optim.R"))
+source(file.path(base_path, "scripts/replication_package/04_plots_setup.R"))
 source(file.path(base_path, "scripts/replication_package/plots/01_plot_hyperparameter_diagnostics.R"))
 source(file.path(base_path, "scripts/replication_package/plots/02_plot_spatial_clustering_maps.R"))
 source(file.path(base_path, "scripts/replication_package/plots/03_plot_ari_stability_heatmaps.R"))

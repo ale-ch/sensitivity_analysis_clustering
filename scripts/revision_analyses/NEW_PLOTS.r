@@ -37,7 +37,7 @@ png("dendrogram_plot.png", width = 800, height = 600, res = 100)
 par(mar = c(5, 4, 4, 1)) 
 plot(treeD0D1, hang = -1, labels = FALSE, xlab = "", ylab = "Aggregation height",
      main = "Ward dendrogram with both DPCM and geographical features", 
-     sub = paste("Mixing parameter of the geographical distance matrix α =", alpha_ottimo))
+     sub = paste("Mixing parameter of the geographical distance matrix α =", optimal_alpha))
 
 gruppi <- cutree(treeD0D1, 5L)
 ordine <- unique(gruppi[treeD0D1$order])

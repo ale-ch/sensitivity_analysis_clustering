@@ -26,7 +26,14 @@ source(file.path(base_path, "scripts/replication_package/01_env_preparation.R"))
 source(file.path(base_path, "scripts/replication_package/02_data_preparation.R"))
 source(file.path(base_path, "scripts/replication_package/03_params_optim.R"))
 source(file.path(base_path, "scripts/replication_package/04_plots_setup.R"))
-source(file.path(base_path, "scripts/replication_package/plots/01_plot_hyperparameter_diagnostics.R"))
-source(file.path(base_path, "scripts/replication_package/plots/02_plot_spatial_clustering_maps.R"))
-source(file.path(base_path, "scripts/replication_package/plots/03_plot_ari_stability_heatmaps.R"))
-source(file.path(base_path, "scripts/replication_package/plots/04_plot_exploratory_eda.R"))
+
+#source(file.path(base_path, "scripts/replication_package/plots/01_plot_hyperparameter_diagnostics.R"))
+#source(file.path(base_path, "scripts/replication_package/plots/02_plot_spatial_clustering_maps.R"))
+#source(file.path(base_path, "scripts/replication_package/plots/03_plot_ari_stability_heatmaps.R"))
+#source(file.path(base_path, "scripts/replication_package/plots/04_plot_exploratory_eda.R"))
+
+
+source(file.path(base_path, "scripts/replication_package/plots/01_plot_hyperparameter_diagnostics_EN.R"))
+source(file.path(base_path, "scripts/replication_package/plots/02_plot_spatial_clustering_maps_EN.R"))
+source(file.path(base_path, "scripts/replication_package/plots/03_plot_ari_stability_heatmaps_EN.R"))
+source(file.path(base_path, "scripts/replication_package/plots/04_plot_exploratory_eda_EN.R"))
